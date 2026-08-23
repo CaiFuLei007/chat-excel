@@ -23,22 +23,22 @@ enum class ErrorCode : int
     // =============================================================
 };
 
-/*
- * 函数功能: 将错误码转换为对应的错误信息(中文描述)
- * 函数参数: error_code 错误码
- * 函数返回值: 错误码对应的中文描述, 错误码不存在时返回 "未知错误"
+/**
+ * @brief 将错误码转换为对应的错误信息(中文描述)
+ * @param error_code 错误码
+ * @return 错误码对应的中文描述, 错误码不存在时返回 "未知错误"
  */
 std::string ErrorMessage(ErrorCode error_code);
 
-/*
- * 函数功能: 获取错误码所属的子服务名称
- * 函数参数: error_code 错误码
- * 函数返回值: 错误码所属的子服务名称, 错误码不存在时返回 "未知错误"
+/**
+ * @brief 获取错误码所属的子服务名称
+ * @param error_code 错误码
+ * @return 错误码所属的子服务名称, 错误码不存在时返回 "未知错误"
  */
 std::string GetServiceName(ErrorCode error_code);
 
-/*
- * 类功能: 项目自定义异常类, 继承自 std::exception, 用于处理项目中出现的异常以及错误情况
+/**
+ * @brief 项目自定义异常类, 继承自 std::exception, 用于处理项目中出现的异常以及错误情况
  */
 class ChatExcelException : public std::exception
 {
@@ -47,9 +47,9 @@ public:
 
     ~ChatExcelException() override = default;
 
-    /*
-     * 函数功能: 获取错误码信息, 格式为 "服务名称 : 错误码描述"
-     * 函数返回值: "服务名称 : 错误码描述" 格式的错误码信息字符串
+    /**
+     * @brief 获取错误码信息, 格式为 "服务名称 : 错误码描述"
+     * @return "服务名称 : 错误码描述" 格式的错误码信息字符串
      */
     virtual const char* what() const noexcept override;
 
