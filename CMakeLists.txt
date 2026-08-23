@@ -17,6 +17,9 @@ add_library(chat_excel_common STATIC common/exception.cc)
 # 以项目根目录作为头文件搜索路径, 支持 #include "common/exception.h" 形式导入
 target_include_directories(chat_excel_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+# 数据实体模块(odb 数据库映射类与生成的数据库支持代码)
+add_subdirectory(data)
+
 # 网关子服务
 add_subdirectory(svc_gateway_service)
 

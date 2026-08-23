@@ -11,3 +11,7 @@ compile_commands.json
 *.swp
 
 .DS_Store
+
+# odb 编译器生成产物(数据库支持代码与建表 SQL), 可由 cmake 构建重新生成
+data/odb/
+data/sql/
