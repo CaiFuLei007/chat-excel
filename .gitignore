@@ -1,0 +1,13 @@
+.trae/
+.vscode/
+build/
+.clangd
+
+.cache/
+compile_commands.json
+
+.idea/
+
+*.swp
+
+.DS_Store

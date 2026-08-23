@@ -1,0 +1,31 @@
+# CMake 最低版本要求
+cmake_minimum_required(VERSION 3.10)
+
+# 项目名称
+project(chat_excel CXX)
+
+# C++ 标准版本, 系统 gtest 要求 C++14 及以上
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# 编译警告选项
+add_compile_options(-Wall -Wextra)
+
+# 公共模块编译为静态库, 供各子服务与测试复用
+add_library(chat_excel_common STATIC common/exception.cc)
+
+# 以项目根目录作为头文件搜索路径, 支持 #include "common/exception.h" 形式导入
+target_include_directories(chat_excel_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# 查找 gtest 测试框架
+find_package(GTest REQUIRED)
+
+# 异常模块单元测试
+add_executable(exception_test test/common/exception/exception_test.cc)
+target_link_libraries(exception_test PRIVATE chat_excel_common GTest::gtest GTest::gtest_main)
+
+# 启用 ctest 测试
+enable_testing()
+
+# 注册异常模块单元测试
+add_test(NAME ExceptionTest COMMAND exception_test)

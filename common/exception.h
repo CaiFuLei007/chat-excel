@@ -1,0 +1,64 @@
+#pragma once
+
+#include <exception>
+#include <string>
+
+namespace chat_excel
+{
+
+// 错误码枚举类, 错误码为整形, 按子服务划分错误码范围
+enum class ErrorCode : int
+{
+    // 成功
+    SUCCESS = 0,
+
+    // ==================== 子服务错误码范围预留 ====================
+    // 用户子服务错误码范围 100 - 199, eg: USER_NICKNAME_EXISTS 用户昵称已存在
+    // 文件子服务错误码范围 200 - 299, eg: FILE_NOT_FOUND 文件不存在
+    // 数据库子服务错误码范围 300 - 399, eg: DB_CONNECTION_FAILED 数据库连接失败
+    // Excel 解析子服务错误码范围 400 - 499, eg: EXCEL_PARSE_FAILED Excel 解析失败
+    // 通知子服务错误码范围 500 - 599, eg: NOTIFY_SEND_FAILED 通知发送失败
+    // AI 子服务错误码范围 600 - 699, eg: AI_MODEL_NOT_FOUND AI 模型不存在
+    // 网关子服务错误码范围 700 - 799, eg: GATEWAY_CONNECTION_FAILED 网关连接失败
+    // =============================================================
+};
+
+/*
+ * 函数功能: 将错误码转换为对应的错误信息(中文描述)
+ * 函数参数: error_code 错误码
+ * 函数返回值: 错误码对应的中文描述, 错误码不存在时返回 "未知错误"
+ */
+std::string ErrorMessage(ErrorCode error_code);
+
+/*
+ * 函数功能: 获取错误码所属的子服务名称
+ * 函数参数: error_code 错误码
+ * 函数返回值: 错误码所属的子服务名称, 错误码不存在时返回 "未知错误"
+ */
+std::string GetServiceName(ErrorCode error_code);
+
+/*
+ * 类功能: 项目自定义异常类, 继承自 std::exception, 用于处理项目中出现的异常以及错误情况
+ */
+class ChatExcelException : public std::exception
+{
+public:
+    explicit ChatExcelException(ErrorCode error_code);
+
+    ~ChatExcelException() override = default;
+
+    /*
+     * 函数功能: 获取错误码信息, 格式为 "服务名称 : 错误码描述"
+     * 函数返回值: "服务名称 : 错误码描述" 格式的错误码信息字符串
+     */
+    virtual const char* what() const noexcept override;
+
+private:
+    // 错误码
+    ErrorCode error_code_;
+
+    // 错误码信息(格式: 服务名称 : 错误码描述)
+    std::string error_message_;
+};
+
+} // namespace chat_excel
