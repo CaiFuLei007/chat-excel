@@ -37,6 +37,9 @@ enum class ErrorCode : int
     // 验证码数据 JSON 序列化或反序列化失败
     VERIFYCODE_DATA_SERIALIZE_ERROR = 107,
 
+    // 用户数据不存在
+    USER_DATA_NOT_FOUND = 108,
+
     // ==================== 子服务错误码范围预留 ====================
     // 文件子服务错误码范围 200 - 299, eg: FILE_NOT_FOUND 文件不存在
     // 数据库子服务错误码范围 300 - 399, eg: DB_CONNECTION_FAILED 数据库连接失败

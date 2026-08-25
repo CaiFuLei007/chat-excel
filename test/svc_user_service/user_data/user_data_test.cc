@@ -207,6 +207,64 @@ TEST_F(UserDataTest, SaveDuplicateUserThrowChatExcelException)
     EXPECT_THROW(user_data_->SaveUser(test_user_), ChatExcelException);
 }
 
+// 正常情况: 保存用户后更新用户信息, 再通过用户 ID 查询验证各字段均已更新
+TEST_F(UserDataTest, UpdateUserThenGetByUserId)
+{
+    user_data_->SaveUser(test_user_);
+
+    UserInfo update_info;
+    update_info.user_id = test_user_.user_id;
+    update_info.nickname = "nick_updated";
+    update_info.email = "updated@qq.com";
+    update_info.password = "pwd_updated";
+    update_info.status = UserStatus::LOGGED_IN;
+    user_data_->UpdateUser(update_info);
+
+    std::optional<UserInfo> user_info = user_data_->GetUserByUserId(test_user_.user_id);
+    ASSERT_TRUE(user_info.has_value());
+    ExpectUserInfoEqual(*user_info, update_info);
+}
+
+// 异常情况: 更新不存在的用户抛出 ChatExcelException
+TEST_F(UserDataTest, UpdateUserThrowWhenNotExists)
+{
+    EXPECT_THROW(user_data_->UpdateUser(test_user_), ChatExcelException);
+}
+
+// 异常情况: 更新昵称为其他用户已占用的昵称, 唯一键冲突抛出 ChatExcelException
+TEST_F(UserDataTest, UpdateUserThrowWhenNicknameConflicts)
+{
+    user_data_->SaveUser(test_user_);
+
+    UserInfo other_user;
+    other_user.user_id = "uid_other_for_test";
+    other_user.nickname = "nick_other_for_test";
+    other_user.email = "other_test@qq.com";
+    other_user.password = "pwd_other_for_test";
+    other_user.status = UserStatus::NOT_LOGGED_IN;
+    user_data_->SaveUser(other_user);
+
+    // 将 other 用户的昵称更新为 test 用户已占用的昵称, 触发唯一键冲突
+    other_user.nickname = test_user_.nickname;
+    EXPECT_THROW(user_data_->UpdateUser(other_user), ChatExcelException);
+}
+
+// 正常情况: 保存用户后删除用户, 再通过用户 ID 查询返回 std::nullopt
+TEST_F(UserDataTest, DeleteUserThenGetReturnNullopt)
+{
+    user_data_->SaveUser(test_user_);
+    user_data_->DeleteUserByUserId(test_user_.user_id);
+
+    std::optional<UserInfo> user_info = user_data_->GetUserByUserId(test_user_.user_id);
+    EXPECT_FALSE(user_info.has_value());
+}
+
+// 边界情况: 删除不存在的用户不抛出异常
+TEST_F(UserDataTest, DeleteUserWhenNotExists)
+{
+    EXPECT_NO_THROW(user_data_->DeleteUserByUserId("not_exists_user_id"));
+}
+
 // ==================== Redis 操作测试 ====================
 
 // 正常情况: 保存缓存后通过用户 ID / 邮箱 / 昵称均可查询到相同用户信息

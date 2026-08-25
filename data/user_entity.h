@@ -78,6 +78,24 @@ public:
     UserStatus Status() const;
 
     /**
+     * @brief 设置用户昵称
+     * @param nickname 用户昵称
+     */
+    void SetNickname(const std::string& nickname);
+
+    /**
+     * @brief 设置用户邮箱
+     * @param email 用户邮箱
+     */
+    void SetEmail(const std::string& email);
+
+    /**
+     * @brief 设置加密后的用户密码
+     * @param password 加密后的用户密码
+     */
+    void SetPassword(const std::string& password);
+
+    /**
      * @brief 设置用户登录状态
      * @param status 用户登录状态
      */

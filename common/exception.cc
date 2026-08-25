@@ -19,6 +19,7 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::SESSION_DATA_SERIALIZE_ERROR), "会话数据 JSON 序列化或反序列化失败"},
         {static_cast<int>(ErrorCode::VERIFYCODE_DATA_REDIS_ERROR), "验证码数据 Redis 操作失败"},
         {static_cast<int>(ErrorCode::VERIFYCODE_DATA_SERIALIZE_ERROR), "验证码数据 JSON 序列化或反序列化失败"},
+        {static_cast<int>(ErrorCode::USER_DATA_NOT_FOUND), "用户数据不存在"},
     };
 
     auto iter = kErrorMessageMap.find(static_cast<int>(error_code));

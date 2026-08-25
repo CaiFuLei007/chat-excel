@@ -71,6 +71,18 @@ public:
     bool CheckEmailExists(const std::string& email);
 
     /**
+     * @brief 更新数据库中的用户信息, 通过用户 ID 定位用户, 更新昵称 / 邮箱 / 密码 / 状态
+     * @param user_info 用户信息, 其中用户 ID 用于定位用户, 其余字段为更新后的新值
+     */
+    void UpdateUser(const UserInfo& user_info);
+
+    /**
+     * @brief 通过用户 ID 删除数据库中的用户信息, 用户不存在时不抛出异常
+     * @param user_id 用户 ID
+     */
+    void DeleteUserByUserId(const std::string& user_id);
+
+    /**
      * @brief 保存用户数据到缓存, 通过事务一次写入三个 field 并刷新缓存过期时间
      * @param user_info 用户信息
      */

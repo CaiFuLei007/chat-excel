@@ -43,6 +43,21 @@ UserStatus UserEntity::Status() const
     return status_;
 }
 
+void UserEntity::SetNickname(const std::string& nickname)
+{
+    nickname_ = nickname;
+}
+
+void UserEntity::SetEmail(const std::string& email)
+{
+    email_ = email;
+}
+
+void UserEntity::SetPassword(const std::string& password)
+{
+    password_ = password;
+}
+
 void UserEntity::SetStatus(UserStatus status)
 {
     status_ = status;

@@ -246,6 +246,60 @@ bool UserData::CheckEmailExists(const std::string& email)
     }
 }
 
+void UserData::UpdateUser(const UserInfo& user_info)
+{
+    try
+    {
+        odb::transaction transaction(mysql_handle_->begin());
+
+        // SQL : SELECT id, user_id, nickname, email, password, status
+        //       FROM tbl_user WHERE user_id = '{user_id}'
+        odb::result<UserEntity> result(mysql_handle_->query<UserEntity>(
+            odb::query<UserEntity>::user_id == user_info.user_id));
+        odb::result<UserEntity>::iterator iter = result.begin();
+        if (iter == result.end())
+        {
+            transaction.commit();
+            ERR("更新用户信息失败, 用户不存在, user_id: {}", user_info.user_id);
+            throw ChatExcelException(ErrorCode::USER_DATA_NOT_FOUND);
+        }
+
+        // SQL : UPDATE tbl_user SET nickname = '{nickname}', email = '{email}',
+        //       password = '{password}', status = {status} WHERE user_id = '{user_id}'
+        UserEntity entity = *iter;
+        entity.SetNickname(user_info.nickname);
+        entity.SetEmail(user_info.email);
+        entity.SetPassword(user_info.password);
+        entity.SetStatus(user_info.status);
+        mysql_handle_->update(entity);
+        transaction.commit();
+        INFO("更新用户信息成功, user_id: {}", user_info.user_id);
+    }
+    catch (const odb::exception& e)
+    {
+        ERR("更新用户信息失败, user_id: {}, 错误: {}", user_info.user_id, e.what());
+        throw ChatExcelException(ErrorCode::USER_DATA_MYSQL_ERROR);
+    }
+}
+
+void UserData::DeleteUserByUserId(const std::string& user_id)
+{
+    try
+    {
+        // SQL : DELETE FROM tbl_user WHERE user_id = '{user_id}'
+        odb::transaction transaction(mysql_handle_->begin());
+        mysql_handle_->erase_query<UserEntity>(
+            odb::query<UserEntity>::user_id == user_id);
+        transaction.commit();
+        INFO("通过用户 ID 删除用户信息成功, user_id: {}", user_id);
+    }
+    catch (const odb::exception& e)
+    {
+        ERR("通过用户 ID 删除用户信息失败, user_id: {}, 错误: {}", user_id, e.what());
+        throw ChatExcelException(ErrorCode::USER_DATA_MYSQL_ERROR);
+    }
+}
+
 void UserData::SaveUserToCache(const UserInfo& user_info)
 {
     // 序列化用户信息为 JSON 字符串, 三个 field 对应相同的 value
