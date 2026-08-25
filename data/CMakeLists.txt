@@ -92,11 +92,13 @@ target_include_directories(chat_excel_data PUBLIC
 )
 
 # odb 运行库(静态库构建期不解析符号, 由下游可执行程序链接时使用) :
-#   odb      : odb 核心运行库
-#   odb-mysql: odb MySQL 数据库运行库
-# cpp_toolkit : JsonUtil 序列化与 Redis/日志封装(传递链接 redis++/jsoncpp/spdlog)
+#   odb              : odb 核心运行库
+#   odb-mysql        : odb MySQL 数据库运行库
+#   chat_excel_common : 异常类 ChatExcelException(数据访问层抛出异常, 传递链接至下游)
+#   cpp_toolkit      : JsonUtil 序列化与 Redis/日志封装(传递链接 redis++/jsoncpp/spdlog)
 target_link_libraries(chat_excel_data PUBLIC
     odb
     odb-mysql
+    chat_excel_common
     cpp_toolkit::cpp_toolkit
 )

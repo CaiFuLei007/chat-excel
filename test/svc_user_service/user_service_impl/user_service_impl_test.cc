@@ -80,7 +80,7 @@ std::string GetRequiredEnv(const char* name)
 std::shared_ptr<odb::database>& GetMysqlHandle()
 {
     static std::shared_ptr<odb::database> handle = [] {
-        cpp_toolkit::mysql_settings settings;
+        cpp_toolkit::MySQLSettings settings;
         settings.database = GetRequiredEnv("MYSQL_CHAT_EXCEL_TEST_DATABASE");
         settings.user = GetRequiredEnv("MYSQL_CHAT_EXCEL_TEST_USER");
         settings.password = GetRequiredEnv("MYSQL_CHAT_EXCEL_TEST_PASSWORD");
