@@ -20,6 +20,9 @@ target_include_directories(chat_excel_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # 数据实体模块(odb 数据库映射类与生成的数据库支持代码)
 add_subdirectory(data)
 
+# proto 接口定义模块(protoc 生成的 RPC 接口代码)
+add_subdirectory(proto)
+
 # 用户子服务
 add_subdirectory(svc_user_service)
 
@@ -43,3 +46,6 @@ add_test(NAME ExceptionTest COMMAND exception_test)
 add_subdirectory(test/svc_user_service/user_data)
 add_subdirectory(test/svc_user_service/session_data)
 add_subdirectory(test/svc_user_service/verifycode_data)
+
+# 用户子服务 RPC 接口实现层单元测试
+add_subdirectory(test/svc_user_service/user_service_impl)

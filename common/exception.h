@@ -52,6 +52,18 @@ enum class ErrorCode : int
     // 用户密码加密失败
     USER_PASSWORD_ENCRYPT_ERROR = 112,
 
+    // 用户昵称已存在
+    USER_NICKNAME_EXISTS = 113,
+
+    // 用户邮箱已存在
+    USER_EMAIL_EXISTS = 114,
+
+    // 用户子服务请求参数错误
+    USER_SERVICE_PARAMS_ERROR = 115,
+
+    // 用户子服务内部错误
+    USER_SERVICE_INTERNAL_ERROR = 116,
+
     // ==================== 子服务错误码范围预留 ====================
     // 文件子服务错误码范围 200 - 299, eg: FILE_NOT_FOUND 文件不存在
     // 数据库子服务错误码范围 300 - 399, eg: DB_CONNECTION_FAILED 数据库连接失败
@@ -85,6 +97,12 @@ public:
     explicit ChatExcelException(ErrorCode error_code);
 
     ~ChatExcelException() override = default;
+
+    /**
+     * @brief 获取异常携带的错误码
+     * @return 异常对应的错误码
+     */
+    ErrorCode error_code() const noexcept;
 
     /**
      * @brief 获取错误码信息, 格式为 "服务名称 : 错误码描述"

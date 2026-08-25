@@ -12,6 +12,10 @@ using chat_excel::ErrorCode;
 TEST(ErrorMessageTest, ReturnDescriptionForDefinedCode)
 {
     EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::SUCCESS), "成功");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::USER_NICKNAME_EXISTS), "用户昵称已存在");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::USER_EMAIL_EXISTS), "用户邮箱已存在");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::USER_SERVICE_PARAMS_ERROR), "用户子服务请求参数错误");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::USER_SERVICE_INTERNAL_ERROR), "用户子服务内部错误");
 }
 
 // 异常情况: 未定义的错误码返回 "未知错误"
@@ -61,6 +65,14 @@ TEST(ChatExcelExceptionTest, WhatReturnFormattedMessage)
     ChatExcelException exception(ErrorCode::SUCCESS);
 
     EXPECT_STREQ(exception.what(), "服务成功 , 无错误 : 成功");
+}
+
+// 正常情况: error_code 方法返回异常构造时传入的错误码
+TEST(ChatExcelExceptionTest, ErrorCodeReturnConstructedCode)
+{
+    ChatExcelException exception(ErrorCode::USER_SERVICE_PARAMS_ERROR);
+
+    EXPECT_EQ(exception.error_code(), ErrorCode::USER_SERVICE_PARAMS_ERROR);
 }
 
 // 正常情况: 异常对象可被 std::exception 基类捕获并获取错误码信息

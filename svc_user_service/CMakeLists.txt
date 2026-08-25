@@ -7,7 +7,7 @@
 find_package(cpp_toolkit REQUIRED)
 
 # =================================================================
-#                         生成静态库
+#                         生成静态库(业务逻辑层)
 # =================================================================
 
 # 用户子服务业务逻辑层静态库 : 会话管理类 + 用户业务逻辑类实现代码
@@ -32,4 +32,30 @@ target_link_libraries(chat_excel_user_business PUBLIC
     chat_excel_data
     cpp_toolkit::cpp_toolkit
     crypt
+)
+
+# =================================================================
+#                         生成静态库(RPC 接口实现层)
+# =================================================================
+
+# 用户子服务 RPC 接口实现层静态库 : protoc 生成服务类的 RPC 接口实现代码
+add_library(chat_excel_user_service STATIC
+    user_service_impl.cpp
+)
+
+# 头文件搜索路径 :
+#   项目根目录 : 支持下游以 #include "svc_user_service/user_service_impl.h" 方式导入
+target_include_directories(chat_excel_user_service PUBLIC
+    ${PROJECT_SOURCE_DIR}
+)
+
+# 链接依赖 :
+#   chat_excel_user_business : 用户业务逻辑层
+#   chat_excel_proto         : protoc 生成的 RPC 接口代码(user_service.pb.h/cc),
+#                              传递链接 protobuf 运行时库与头文件搜索路径
+#   cpp_toolkit              : brpc::ClosureGuard 与日志封装
+target_link_libraries(chat_excel_user_service PUBLIC
+    chat_excel_user_business
+    chat_excel_proto
+    cpp_toolkit::cpp_toolkit
 )

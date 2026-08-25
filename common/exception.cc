@@ -24,6 +24,10 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::VERIFYCODE_ERROR), "验证码无效或已过期"},
         {static_cast<int>(ErrorCode::SESSION_NOT_FOUND), "会话不存在或已失效"},
         {static_cast<int>(ErrorCode::USER_PASSWORD_ENCRYPT_ERROR), "用户密码加密失败"},
+        {static_cast<int>(ErrorCode::USER_NICKNAME_EXISTS), "用户昵称已存在"},
+        {static_cast<int>(ErrorCode::USER_EMAIL_EXISTS), "用户邮箱已存在"},
+        {static_cast<int>(ErrorCode::USER_SERVICE_PARAMS_ERROR), "用户子服务请求参数错误"},
+        {static_cast<int>(ErrorCode::USER_SERVICE_INTERNAL_ERROR), "用户子服务内部错误"},
     };
 
     auto iter = kErrorMessageMap.find(static_cast<int>(error_code));
@@ -89,6 +93,11 @@ ChatExcelException::ChatExcelException(ErrorCode error_code)
     : error_code_(error_code),
       error_message_(GetServiceName(error_code) + " : " + ErrorMessage(error_code))
 {
+}
+
+ErrorCode ChatExcelException::error_code() const noexcept
+{
+    return error_code_;
 }
 
 const char* ChatExcelException::what() const noexcept
