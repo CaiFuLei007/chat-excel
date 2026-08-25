@@ -11,6 +11,14 @@ std::string ErrorMessage(ErrorCode error_code)
     // 错误码与错误信息的映射表, 后续新增错误码时在此处补充对应的中文描述
     static const std::unordered_map<int, std::string> kErrorMessageMap = {
         {static_cast<int>(ErrorCode::SUCCESS), "成功"},
+        {static_cast<int>(ErrorCode::USER_DATA_MYSQL_ERROR), "用户数据 MySQL 操作失败"},
+        {static_cast<int>(ErrorCode::USER_DATA_REDIS_ERROR), "用户数据 Redis 操作失败"},
+        {static_cast<int>(ErrorCode::USER_DATA_SERIALIZE_ERROR), "用户数据 JSON 序列化或反序列化失败"},
+        {static_cast<int>(ErrorCode::SESSION_DATA_MYSQL_ERROR), "会话数据 MySQL 操作失败"},
+        {static_cast<int>(ErrorCode::SESSION_DATA_REDIS_ERROR), "会话数据 Redis 操作失败"},
+        {static_cast<int>(ErrorCode::SESSION_DATA_SERIALIZE_ERROR), "会话数据 JSON 序列化或反序列化失败"},
+        {static_cast<int>(ErrorCode::VERIFYCODE_DATA_REDIS_ERROR), "验证码数据 Redis 操作失败"},
+        {static_cast<int>(ErrorCode::VERIFYCODE_DATA_SERIALIZE_ERROR), "验证码数据 JSON 序列化或反序列化失败"},
     };
 
     auto iter = kErrorMessageMap.find(static_cast<int>(error_code));

@@ -12,8 +12,32 @@ enum class ErrorCode : int
     // 成功
     SUCCESS = 0,
 
+    // ==================== 用户子服务错误码范围 100 - 199 ====================
+    // 用户数据 MySQL 操作失败
+    USER_DATA_MYSQL_ERROR = 100,
+
+    // 用户数据 Redis 操作失败
+    USER_DATA_REDIS_ERROR = 101,
+
+    // 用户数据 JSON 序列化或反序列化失败
+    USER_DATA_SERIALIZE_ERROR = 102,
+
+    // 会话数据 MySQL 操作失败
+    SESSION_DATA_MYSQL_ERROR = 103,
+
+    // 会话数据 Redis 操作失败
+    SESSION_DATA_REDIS_ERROR = 104,
+
+    // 会话数据 JSON 序列化或反序列化失败
+    SESSION_DATA_SERIALIZE_ERROR = 105,
+
+    // 验证码数据 Redis 操作失败
+    VERIFYCODE_DATA_REDIS_ERROR = 106,
+
+    // 验证码数据 JSON 序列化或反序列化失败
+    VERIFYCODE_DATA_SERIALIZE_ERROR = 107,
+
     // ==================== 子服务错误码范围预留 ====================
-    // 用户子服务错误码范围 100 - 199, eg: USER_NICKNAME_EXISTS 用户昵称已存在
     // 文件子服务错误码范围 200 - 299, eg: FILE_NOT_FOUND 文件不存在
     // 数据库子服务错误码范围 300 - 399, eg: DB_CONNECTION_FAILED 数据库连接失败
     // Excel 解析子服务错误码范围 400 - 499, eg: EXCEL_PARSE_FAILED Excel 解析失败

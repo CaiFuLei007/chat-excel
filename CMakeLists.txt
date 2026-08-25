@@ -26,12 +26,17 @@ add_subdirectory(svc_gateway_service)
 # 查找 gtest 测试框架
 find_package(GTest REQUIRED)
 
+# 启用 ctest 测试(必须在注册测试的 add_test 与子目录添加之前调用)
+enable_testing()
+
 # 异常模块单元测试
 add_executable(exception_test test/common/exception/exception_test.cc)
 target_link_libraries(exception_test PRIVATE chat_excel_common GTest::gtest GTest::gtest_main)
 
-# 启用 ctest 测试
-enable_testing()
-
 # 注册异常模块单元测试
 add_test(NAME ExceptionTest COMMAND exception_test)
+
+# 用户子服务数据访问层单元测试
+add_subdirectory(test/svc_user_service/user_data)
+add_subdirectory(test/svc_user_service/session_data)
+add_subdirectory(test/svc_user_service/verifycode_data)

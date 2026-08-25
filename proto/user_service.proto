@@ -1,6 +1,6 @@
 
 syntax = "proto3";   // 指定使用 proto3 语法版本
-package chat2Data.userService;  // 定义包名，类似于C++中的命名空间
+package chat2Data.user_service;  // 定义包名，类似于C++中的命名空间
 option cc_generic_services = true;   // 生成 RPC 服务类
 
 // 用户服务接口定义

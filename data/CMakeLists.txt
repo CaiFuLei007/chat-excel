@@ -8,6 +8,10 @@ if(NOT ODB_COMPILER)
     message(FATAL_ERROR "未找到 odb 编译器, 请先安装 odb")
 endif()
 
+# cpp-toolkit 工具库(数据访问类使用其中的 JsonUtil 序列化, Redis/日志封装,
+# 已声明 redis++/jsoncpp/spdlog 等底层传递依赖)
+find_package(cpp_toolkit REQUIRED)
+
 # =================================================================
 #                         odb 映射类编译
 # =================================================================
@@ -67,16 +71,20 @@ add_custom_command(
 #                         生成静态库
 # =================================================================
 
-# 数据实体静态库 : 映射类实现代码 + odb 生成的数据库支持代码
+# 数据实体静态库 : 映射类实现代码 + 数据访问类实现代码 + odb 生成的数据库支持代码
 add_library(chat_excel_data STATIC
     user_entity.cc
     session_entity.cc
+    user_data.cpp
+    session_data.cpp
+    verifycode_data.cpp
     ${ODB_CODE_DIR}/user_entity-odb.cxx
     ${ODB_CODE_DIR}/session_entity-odb.cxx
 )
 
 # 头文件搜索路径 :
-#   项目根目录 : 支持下游以 #include "data/user_entity.h" 方式导入
+#   项目根目录 : 支持下游以 #include "data/user_entity.h" 与
+#                #include "svc_user_service/common.h" 方式导入
 #   data 目录  : odb 生成代码以 #include "user_entity.h" 方式引用映射类头文件
 target_include_directories(chat_excel_data PUBLIC
     ${PROJECT_SOURCE_DIR}
@@ -86,7 +94,9 @@ target_include_directories(chat_excel_data PUBLIC
 # odb 运行库(静态库构建期不解析符号, 由下游可执行程序链接时使用) :
 #   odb      : odb 核心运行库
 #   odb-mysql: odb MySQL 数据库运行库
+# cpp_toolkit : JsonUtil 序列化与 Redis/日志封装(传递链接 redis++/jsoncpp/spdlog)
 target_link_libraries(chat_excel_data PUBLIC
     odb
     odb-mysql
+    cpp_toolkit::cpp_toolkit
 )
