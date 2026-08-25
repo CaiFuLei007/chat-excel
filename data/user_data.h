@@ -110,6 +110,12 @@ public:
     std::optional<UserInfo> GetUserByNicknameFromCache(const std::string& nickname);
 
     /**
+     * @brief 删除缓存中的用户数据, 通过事务一次删除用户对应的三个 field
+     * @param user_info 用户信息
+     */
+    void DeleteUserFromCache(const UserInfo& user_info);
+
+    /**
      * @brief 检查用户昵称在缓存中是否存在
      * @param nickname 用户昵称
      * @return 昵称存在返回 true, 不存在返回 false

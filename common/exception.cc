@@ -20,6 +20,10 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::VERIFYCODE_DATA_REDIS_ERROR), "验证码数据 Redis 操作失败"},
         {static_cast<int>(ErrorCode::VERIFYCODE_DATA_SERIALIZE_ERROR), "验证码数据 JSON 序列化或反序列化失败"},
         {static_cast<int>(ErrorCode::USER_DATA_NOT_FOUND), "用户数据不存在"},
+        {static_cast<int>(ErrorCode::USER_PASSWORD_ERROR), "用户密码错误"},
+        {static_cast<int>(ErrorCode::VERIFYCODE_ERROR), "验证码无效或已过期"},
+        {static_cast<int>(ErrorCode::SESSION_NOT_FOUND), "会话不存在或已失效"},
+        {static_cast<int>(ErrorCode::USER_PASSWORD_ENCRYPT_ERROR), "用户密码加密失败"},
     };
 
     auto iter = kErrorMessageMap.find(static_cast<int>(error_code));

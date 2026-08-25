@@ -369,6 +369,30 @@ std::optional<UserInfo> UserData::GetUserByNicknameFromCache(const std::string& 
     return GetUserFromCacheByField(std::string(kUserFieldPrefix) + nickname);
 }
 
+void UserData::DeleteUserFromCache(const UserInfo& user_info)
+{
+    try
+    {
+        // 一个用户对应三个 field, 使用事务(MULTI/EXEC)批量执行,
+        // 保证三个 field 整体删除; HDEL 删除不存在的 field 时无副作用
+        const std::string user_id_field = std::string(kUserFieldPrefix) + user_info.user_id;
+        const std::string nickname_field = std::string(kUserFieldPrefix) + user_info.nickname;
+        const std::string email_field = std::string(kUserFieldPrefix) + user_info.email;
+
+        auto transaction = redis_handle_->transaction();
+        transaction.hdel(kUserCacheKey, user_id_field)
+            .hdel(kUserCacheKey, nickname_field)
+            .hdel(kUserCacheKey, email_field);
+        transaction.exec();
+        INFO("删除缓存中的用户数据成功, user_id: {}", user_info.user_id);
+    }
+    catch (const sw::redis::Error& e)
+    {
+        ERR("删除缓存中的用户数据失败, user_id: {}, 错误: {}", user_info.user_id, e.what());
+        throw ChatExcelException(ErrorCode::USER_DATA_REDIS_ERROR);
+    }
+}
+
 bool UserData::CheckNicknameExistsInCache(const std::string& nickname)
 {
     try

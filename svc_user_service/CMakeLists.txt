@@ -1,0 +1,35 @@
+# =================================================================
+#                         查找依赖
+# =================================================================
+
+# cpp_toolkit 工具库(UserBusiness 成员 ChannelManager 依赖 rpc.h 封装,
+# 已声明 brpc/protobuf/spdlog 等底层传递依赖)
+find_package(cpp_toolkit REQUIRED)
+
+# =================================================================
+#                         生成静态库
+# =================================================================
+
+# 用户子服务业务逻辑层静态库 : 会话管理类 + 用户业务逻辑类实现代码
+add_library(chat_excel_user_business STATIC
+    session_manager.cpp
+    user_business.cpp
+)
+
+# 头文件搜索路径 :
+#   项目根目录 : 支持下游以 #include "svc_user_service/common.h" 与
+#                #include "data/user_data.h" 方式导入
+target_include_directories(chat_excel_user_business PUBLIC
+    ${PROJECT_SOURCE_DIR}
+)
+
+# 链接依赖 :
+#   chat_excel_data : 数据访问层(UserData / SessionData / VerifyCodeData),
+#                    传递链接 odb / odb-mysql / cpp_toolkit
+#   cpp_toolkit     : ChannelManager RPC 信道管理封装
+#   crypt           : bcrypt 单向哈希加密(libxcrypt 的 crypt_r 可重入接口)
+target_link_libraries(chat_excel_user_business PUBLIC
+    chat_excel_data
+    cpp_toolkit::cpp_toolkit
+    crypt
+)

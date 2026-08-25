@@ -10,10 +10,10 @@
 | 字段 | 类型 | 约束 | 空值 | 备注 | 
 | --- | --- | --- | --- | --- |
 | id | BIGINT UNSIGNED | PRI | NOT NULL | 主键 ID |
-| user_id | VARCHAR(32) | UNIQUE | NOT NULL | 用户 ID |
+| user_id | VARCHAR(64) | UNIQUE | NOT NULL | 用户 ID |
 | nickname | VARCHAR(32) | UNIQUE | NOT NULL | 用户昵称 |
 | email | VARCHAR(32) | UNIQUE | NOT NULL | 用户邮箱 |
-| password | VARCHAR(32) | | NOT NULL | 用户密码 |
+| password | VARCHAR(64) | | NOT NULL | 用户密码 |
 | status | TINYINT UNSIGNED | | NOT NULL | 0 表示未登录 , 1 表示已登录 |
 
 注意事项 : 
@@ -28,8 +28,8 @@
 | 字段 | 类型 | 约束 | 空值 | 备注 | 
 | --- | --- | --- | --- | --- |
 | id | BIGINT UNSIGNED | PRI | NOT NULL | 主键 ID |
-| session_id | VARCHAR(32) | UNIQUE | NOT NULL | 会话 ID |
-| user_id | VARCHAR(32) | | NOT NULL | 用户 ID |
+| session_id | VARCHAR(64) | UNIQUE | NOT NULL | 会话 ID |
+| user_id | VARCHAR(64) | | NOT NULL | 用户 ID |
 
 注意 :
 1. 会话表的会话 ID 必须唯一 , 不能重复

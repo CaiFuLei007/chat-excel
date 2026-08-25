@@ -59,13 +59,13 @@ private:
 
     // 会话 ID, 全系统唯一
 #ifdef ODB_COMPILER
-#pragma db column("session_id") type("VARCHAR(32)") unique
+#pragma db column("session_id") type("VARCHAR(64)") unique
 #endif
     std::string session_id_;
 
     // 会话所属的用户 ID, 可以重复(多设备登录同一账号)
 #ifdef ODB_COMPILER
-#pragma db column("user_id") type("VARCHAR(32)")
+#pragma db column("user_id") type("VARCHAR(64)")
 #endif
     std::string user_id_;
 };

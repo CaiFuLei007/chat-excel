@@ -40,6 +40,18 @@ enum class ErrorCode : int
     // 用户数据不存在
     USER_DATA_NOT_FOUND = 108,
 
+    // 用户密码错误
+    USER_PASSWORD_ERROR = 109,
+
+    // 验证码无效或已过期
+    VERIFYCODE_ERROR = 110,
+
+    // 会话不存在或已失效
+    SESSION_NOT_FOUND = 111,
+
+    // 用户密码加密失败
+    USER_PASSWORD_ENCRYPT_ERROR = 112,
+
     // ==================== 子服务错误码范围预留 ====================
     // 文件子服务错误码范围 200 - 299, eg: FILE_NOT_FOUND 文件不存在
     // 数据库子服务错误码范围 300 - 399, eg: DB_CONNECTION_FAILED 数据库连接失败

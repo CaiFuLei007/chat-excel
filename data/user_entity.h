@@ -116,7 +116,7 @@ private:
 
     // 用户 ID, 全系统唯一
 #ifdef ODB_COMPILER
-#pragma db column("user_id") type("VARCHAR(32)") unique
+#pragma db column("user_id") type("VARCHAR(64)") unique
 #endif
     std::string user_id_;
 
@@ -134,7 +134,7 @@ private:
 
     // 加密后的用户密码
 #ifdef ODB_COMPILER
-#pragma db column("password") type("VARCHAR(32)")
+#pragma db column("password") type("VARCHAR(64)")
 #endif
     std::string password_;
 

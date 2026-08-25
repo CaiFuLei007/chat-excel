@@ -20,6 +20,9 @@ target_include_directories(chat_excel_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # 数据实体模块(odb 数据库映射类与生成的数据库支持代码)
 add_subdirectory(data)
 
+# 用户子服务
+add_subdirectory(svc_user_service)
+
 # 网关子服务
 add_subdirectory(svc_gateway_service)
 
