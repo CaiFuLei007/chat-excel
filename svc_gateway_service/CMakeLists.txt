@@ -25,9 +25,12 @@ target_include_directories(gateway_service PRIVATE
 )
 
 # 链接库 : cpp_toolkit(静态库, 传递链接 etcd-cpp-api/brpc/leveldb/fdfsclient/spdlog/jsoncpp 等底层依赖)
+#          chat_excel_proto(protoc 生成的用户子服务 RPC 接口代码 user_service.pb.h/cc,
+#                           传递链接 protobuf 运行时库与头文件搜索路径)
 #          gflags 由 main.cc 直接使用, 显式声明链接不依赖传递导入
 target_link_libraries(gateway_service PRIVATE
     cpp_toolkit::cpp_toolkit
+    chat_excel_proto
     gflags
     pthread
 )
