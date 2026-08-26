@@ -120,6 +120,18 @@ message LogoutResponse {
     string error_msg = 3; // 错误信息
 }
 
+//////////////////////// 检查会话是否有效 ////////////////////////
+message ValidSessionRequest {
+    string request_id = 1; // 请求id
+    string session_id = 2; // 会话id
+}
+
+message ValidSessionResponse {
+    string request_id = 1; // 请求id
+    int32 error_code = 2; // 错误码
+    string error_msg = 3; // 错误信息
+}
+
 //////////////////////// 获取用户信息 ////////////////////////
 message GetUserInfoRequest {
     string request_id = 1; // 请求id
@@ -163,6 +175,8 @@ service UserService {
     rpc VcodeLogin(VcodeLoginRequest) returns (VcodeLoginResponse);
     // 退出登录
     rpc Logout(LogoutRequest) returns (LogoutResponse);
+    // 检查会话是否有效
+    rpc ValidSession(ValidSessionRequest) returns (ValidSessionResponse);
     // 获取用户信息
     rpc GetUserInfo(GetUserInfoRequest) returns (GetUserInfoResponse);
 }

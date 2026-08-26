@@ -127,6 +127,18 @@ public:
                         google::protobuf::Closure* done) override;
 
     /**
+     * @brief 检查会话是否有效, 会话存在且会话所属用户处于上线状态时会话有效
+     * @param controller RPC 控制器
+     * @param request RPC 请求, 携带会话 ID
+     * @param response RPC 响应, 携带错误码与错误信息
+     * @param done RPC 结束回调, 由 brpc::ClosureGuard 管理生命周期
+     */
+    virtual void ValidSession(google::protobuf::RpcController* controller,
+                              const proto::ValidSessionRequest* request,
+                              proto::ValidSessionResponse* response,
+                              google::protobuf::Closure* done) override;
+
+    /**
      * @brief 获取用户信息, 通过会话 ID 获取对应用户的信息
      * @param controller RPC 控制器
      * @param request RPC 请求, 携带会话 ID

@@ -35,6 +35,8 @@ using chat_excel_proto::user_service::ValidEmailRequest;
 using chat_excel_proto::user_service::ValidEmailResponse;
 using chat_excel_proto::user_service::ValidNicknameRequest;
 using chat_excel_proto::user_service::ValidNicknameResponse;
+using chat_excel_proto::user_service::ValidSessionRequest;
+using chat_excel_proto::user_service::ValidSessionResponse;
 using chat_excel_proto::user_service::VcodeLoginRequest;
 using chat_excel_proto::user_service::VcodeLoginResponse;
 // 业务层类型
@@ -312,6 +314,19 @@ TEST_F(UserServiceImplTest, GetUserInfoWithEmptySessionIdReturnParamsError)
     user_service_impl_->GetUserInfo(nullptr, &request, &response, nullptr);
 
     EXPECT_EQ(response.request_id(), "rid_get_user_info_param");
+    EXPECT_EQ(response.error_code(), static_cast<int>(ErrorCode::USER_SERVICE_PARAMS_ERROR));
+    EXPECT_FALSE(response.error_msg().empty());
+}
+
+TEST_F(UserServiceImplTest, ValidSessionWithEmptySessionIdReturnParamsError)
+{
+    ValidSessionRequest request;
+    request.set_request_id("rid_valid_session_param");
+    ValidSessionResponse response;
+
+    user_service_impl_->ValidSession(nullptr, &request, &response, nullptr);
+
+    EXPECT_EQ(response.request_id(), "rid_valid_session_param");
     EXPECT_EQ(response.error_code(), static_cast<int>(ErrorCode::USER_SERVICE_PARAMS_ERROR));
     EXPECT_FALSE(response.error_msg().empty());
 }
@@ -753,6 +768,91 @@ TEST_F(UserServiceImplTest, LogoutWithInvalidSessionReturnSessionNotFound)
     LogoutResponse response;
 
     user_service_impl_->Logout(nullptr, &request, &response, nullptr);
+
+    EXPECT_EQ(response.error_code(), static_cast<int>(ErrorCode::SESSION_NOT_FOUND));
+    EXPECT_FALSE(response.error_msg().empty());
+}
+
+// ==================== 检查会话有效性测试 ====================
+
+TEST_F(UserServiceImplTest, ValidSessionSuccessAfterPasswdLogin)
+{
+    // 注册用户并密码登录获取会话
+    UserRegisterRequest register_request;
+    register_request.set_request_id("rid_register_for_valid_session");
+    register_request.set_nickname(test_nickname_);
+    register_request.set_password(test_password_);
+    register_request.set_email(test_email_);
+    UserRegisterResponse register_response;
+    user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
+    ASSERT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
+
+    PasswdLoginRequest passwd_login_request;
+    passwd_login_request.set_request_id("rid_passwd_login_for_valid_session");
+    passwd_login_request.set_username(test_nickname_);
+    passwd_login_request.set_password(test_password_);
+    PasswdLoginResponse passwd_login_response;
+    user_service_impl_->PasswdLogin(nullptr, &passwd_login_request, &passwd_login_response, nullptr);
+    ASSERT_EQ(passwd_login_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
+
+    // 登录后检查会话有效
+    ValidSessionRequest request;
+    request.set_request_id("rid_valid_session_success");
+    request.set_session_id(passwd_login_response.result().session_id());
+    ValidSessionResponse response;
+    user_service_impl_->ValidSession(nullptr, &request, &response, nullptr);
+
+    EXPECT_EQ(response.request_id(), "rid_valid_session_success");
+    EXPECT_EQ(response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
+    EXPECT_TRUE(response.error_msg().empty());
+}
+
+TEST_F(UserServiceImplTest, ValidSessionWithInvalidSessionReturnSessionNotFound)
+{
+    ValidSessionRequest request;
+    request.set_request_id("rid_valid_session_invalid");
+    request.set_session_id("invalid_session_id");
+    ValidSessionResponse response;
+
+    user_service_impl_->ValidSession(nullptr, &request, &response, nullptr);
+
+    EXPECT_EQ(response.error_code(), static_cast<int>(ErrorCode::SESSION_NOT_FOUND));
+    EXPECT_FALSE(response.error_msg().empty());
+}
+
+TEST_F(UserServiceImplTest, ValidSessionFailAfterLogout)
+{
+    // 注册用户并密码登录获取会话
+    UserRegisterRequest register_request;
+    register_request.set_request_id("rid_register_for_valid_session_logout");
+    register_request.set_nickname(test_nickname_);
+    register_request.set_password(test_password_);
+    register_request.set_email(test_email_);
+    UserRegisterResponse register_response;
+    user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
+    ASSERT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
+
+    PasswdLoginRequest passwd_login_request;
+    passwd_login_request.set_request_id("rid_passwd_login_for_valid_session_logout");
+    passwd_login_request.set_username(test_nickname_);
+    passwd_login_request.set_password(test_password_);
+    PasswdLoginResponse passwd_login_response;
+    user_service_impl_->PasswdLogin(nullptr, &passwd_login_request, &passwd_login_response, nullptr);
+    ASSERT_EQ(passwd_login_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
+
+    // 退出登录后原会话失效
+    LogoutRequest logout_request;
+    logout_request.set_request_id("rid_logout_for_valid_session");
+    logout_request.set_session_id(passwd_login_response.result().session_id());
+    LogoutResponse logout_response;
+    user_service_impl_->Logout(nullptr, &logout_request, &logout_response, nullptr);
+    ASSERT_EQ(logout_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
+
+    ValidSessionRequest request;
+    request.set_request_id("rid_valid_session_after_logout");
+    request.set_session_id(passwd_login_response.result().session_id());
+    ValidSessionResponse response;
+    user_service_impl_->ValidSession(nullptr, &request, &response, nullptr);
 
     EXPECT_EQ(response.error_code(), static_cast<int>(ErrorCode::SESSION_NOT_FOUND));
     EXPECT_FALSE(response.error_msg().empty());
