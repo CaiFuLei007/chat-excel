@@ -29,6 +29,9 @@ add_subdirectory(svc_user_service)
 # 网关子服务
 add_subdirectory(svc_gateway_service)
 
+# 邮箱通知子服务
+add_subdirectory(svc_email_notify_service)
+
 # 查找 gtest 测试框架
 find_package(GTest REQUIRED)
 

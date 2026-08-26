@@ -28,6 +28,13 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::USER_EMAIL_EXISTS), "用户邮箱已存在"},
         {static_cast<int>(ErrorCode::USER_SERVICE_PARAMS_ERROR), "用户子服务请求参数错误"},
         {static_cast<int>(ErrorCode::USER_SERVICE_INTERNAL_ERROR), "用户子服务内部错误"},
+        {static_cast<int>(ErrorCode::NOTIFY_SEND_FAILED), "邮件发送失败"},
+        {static_cast<int>(ErrorCode::NOTIFY_VERIFYCODE_EMAIL_EMPTY), "验证码邮件接收方邮箱为空"},
+        {static_cast<int>(ErrorCode::NOTIFY_VERIFYCODE_CODE_EMPTY), "验证码为空"},
+        {static_cast<int>(ErrorCode::NOTIFY_EMAIL_TO_EMPTY), "普通邮件接收方邮箱为空"},
+        {static_cast<int>(ErrorCode::NOTIFY_EMAIL_SUBJECT_EMPTY), "普通邮件主题为空"},
+        {static_cast<int>(ErrorCode::NOTIFY_EMAIL_CONTENT_EMPTY), "普通邮件内容为空"},
+        {static_cast<int>(ErrorCode::NOTIFY_SERVICE_INTERNAL_ERROR), "通知子服务内部错误"},
     };
 
     auto iter = kErrorMessageMap.find(static_cast<int>(error_code));
@@ -70,7 +77,7 @@ std::string GetServiceName(ErrorCode error_code)
     // 通知子服务错误码范围 500 - 599
     else if (code >= 500 && code <= 599)
     {
-        return "NotifiyService";
+        return "NotifyService";
     }
     // AI 子服务错误码范围 600 - 699
     else if (code >= 600 && code <= 699)

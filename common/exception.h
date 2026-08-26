@@ -64,6 +64,28 @@ enum class ErrorCode : int
     // 用户子服务内部错误
     USER_SERVICE_INTERNAL_ERROR = 116,
 
+    // ==================== 通知子服务错误码范围 500 - 599 ====================
+    // 邮件发送失败
+    NOTIFY_SEND_FAILED = 500,
+
+    // 验证码邮件接收方邮箱为空
+    NOTIFY_VERIFYCODE_EMAIL_EMPTY = 501,
+
+    // 验证码为空
+    NOTIFY_VERIFYCODE_CODE_EMPTY = 502,
+
+    // 普通邮件接收方邮箱为空
+    NOTIFY_EMAIL_TO_EMPTY = 503,
+
+    // 普通邮件主题为空
+    NOTIFY_EMAIL_SUBJECT_EMPTY = 504,
+
+    // 普通邮件内容为空
+    NOTIFY_EMAIL_CONTENT_EMPTY = 505,
+
+    // 通知子服务内部错误
+    NOTIFY_SERVICE_INTERNAL_ERROR = 506,
+
     // ==================== 子服务错误码范围预留 ====================
     // 文件子服务错误码范围 200 - 299, eg: FILE_NOT_FOUND 文件不存在
     // 数据库子服务错误码范围 300 - 399, eg: DB_CONNECTION_FAILED 数据库连接失败

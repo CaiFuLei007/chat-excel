@@ -14,12 +14,12 @@ find_package(Protobuf REQUIRED)
 set(PROTO_CODE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/proto_code)
 file(MAKE_DIRECTORY ${PROTO_CODE_DIR})
 
-# 生成 user_service.pb.h 与 user_service.pb.cc,
+# 生成 user_service.pb.h/user_service.pb.cc 与 notify_service.pb.h/notify_service.pb.cc,
 # protobuf_generate_cpp 不支持指定输出目录, 使用通用的 protobuf_generate
 protobuf_generate(OUT_VAR PROTO_GENERATED_FILES
     LANGUAGE cpp
     PROTOC_OUT_DIR ${PROTO_CODE_DIR}
-    PROTOS user_service.proto
+    PROTOS user_service.proto notify_service.proto
 )
 
 # =================================================================
