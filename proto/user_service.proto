@@ -108,6 +108,18 @@ message VcodeLoginResponse {
     VcodeLoginResult result = 4; // 登录结果
 }
 
+//////////////////////// 删除验证码 ////////////////////////
+message DeleteVerifyCodeRequest {
+    string request_id = 1; // 请求id
+    string code_id = 2; // 验证码id
+}
+
+message DeleteVerifyCodeResponse {
+    string request_id = 1; // 请求id
+    int32 error_code = 2; // 错误码
+    string error_msg = 3; // 错误信息
+}
+
 //////////////////////// 退出登录 ////////////////////////
 message LogoutRequest {
     string request_id = 1; // 请求id
@@ -173,6 +185,8 @@ service UserService {
     rpc GetCode(GetCodeRequest) returns (GetCodeResponse);
     // 邮箱验证码登录
     rpc VcodeLogin(VcodeLoginRequest) returns (VcodeLoginResponse);
+    // 删除验证码
+    rpc DeleteVerifyCode(DeleteVerifyCodeRequest) returns (DeleteVerifyCodeResponse);
     // 退出登录
     rpc Logout(LogoutRequest) returns (LogoutResponse);
     // 检查会话是否有效

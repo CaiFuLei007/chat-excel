@@ -92,6 +92,13 @@ public:
     std::string GetVerifyCode(const std::string& email);
 
     /**
+     * @brief 删除验证码, 通过验证码 ID 删除缓存中的验证码信息,
+     *        用于验证码登录成功后使验证码失效, 防止验证码被重复使用
+     * @param verifycode_id 验证码 ID
+     */
+    void DeleteVerifyCode(const std::string& verifycode_id);
+
+    /**
      * @brief 退出登录, 用户状态设置为下线, 更新 MySQL 并删除 Redis 用户缓存,
      *        删除当前会话
      * @param session_id 会话 ID

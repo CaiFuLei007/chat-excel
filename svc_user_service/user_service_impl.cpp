@@ -360,6 +360,49 @@ void UserServiceImpl::VcodeLogin(google::protobuf::RpcController* /*controller*/
     }
 }
 
+void UserServiceImpl::DeleteVerifyCode(google::protobuf::RpcController* /*controller*/,
+                                       const proto::DeleteVerifyCodeRequest* request,
+                                       proto::DeleteVerifyCodeResponse* response,
+                                       google::protobuf::Closure* done)
+{
+    // 管理 RPC 响应的内存生命周期, 函数结束析构时自动调用 done->Run() 返回响应
+    brpc::ClosureGuard closure_guard(done);
+
+    // 响应中回填请求 ID, 用于请求与响应的链路追踪
+    response->set_request_id(request->request_id());
+
+    try
+    {
+        // 参数解析与校验, 验证码 ID 不能为空
+        if (request->code_id().empty())
+        {
+            ERR("DeleteVerifyCode 接口请求参数错误, code_id 为空, request_id: {}", request->request_id());
+            SetErrorResponse(response, ErrorCode::USER_SERVICE_PARAMS_ERROR);
+            return;
+        }
+
+        // 调用业务逻辑层删除验证码, 删除失败时业务逻辑层抛出异常
+        user_business_->DeleteVerifyCode(request->code_id());
+
+        // 成功仅设置成功错误码, 不添加成功的描述信息
+        response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
+    }
+    catch (const ChatExcelException& e)
+    {
+        // 业务处理异常, 按照业务处理失败的逻辑进行处理
+        ERR("DeleteVerifyCode 接口业务处理异常, code_id: {}, request_id: {}, 错误信息: {}",
+            request->code_id(), request->request_id(), e.what());
+        SetErrorResponse(response, e.error_code());
+    }
+    catch (const std::exception& e)
+    {
+        // 非预期异常, 统一按照业务处理失败的逻辑进行处理
+        ERR("DeleteVerifyCode 接口非预期异常, code_id: {}, request_id: {}, 错误信息: {}",
+            request->code_id(), request->request_id(), e.what());
+        SetErrorResponse(response, ErrorCode::USER_SERVICE_INTERNAL_ERROR);
+    }
+}
+
 void UserServiceImpl::Logout(google::protobuf::RpcController* /*controller*/,
                              const proto::LogoutRequest* request,
                              proto::LogoutResponse* response,

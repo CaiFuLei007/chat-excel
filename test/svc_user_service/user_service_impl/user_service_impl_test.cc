@@ -19,6 +19,8 @@
 #include "user_service.pb.h"
 
 // proto 生成代码中的消息类型
+using chat_excel_proto::user_service::DeleteVerifyCodeRequest;
+using chat_excel_proto::user_service::DeleteVerifyCodeResponse;
 using chat_excel_proto::user_service::GetCodeRequest;
 using chat_excel_proto::user_service::GetCodeResponse;
 using chat_excel_proto::user_service::GetUserInfoRequest;
@@ -619,6 +621,86 @@ TEST_F(UserServiceImplTest, VcodeLoginWithUnknownEmailReturnUserDataNotFound)
 
     EXPECT_EQ(response.error_code(), static_cast<int>(ErrorCode::USER_DATA_NOT_FOUND));
     EXPECT_FALSE(response.error_msg().empty());
+}
+
+// ==================== 删除验证码测试 ====================
+
+TEST_F(UserServiceImplTest, DeleteVerifyCodeWithEmptyCodeIdReturnParamsError)
+{
+    DeleteVerifyCodeRequest request;
+    request.set_request_id("rid_delete_code_empty");
+    request.set_code_id("");
+    DeleteVerifyCodeResponse response;
+
+    user_service_impl_->DeleteVerifyCode(nullptr, &request, &response, nullptr);
+
+    EXPECT_EQ(response.request_id(), "rid_delete_code_empty");
+    EXPECT_EQ(response.error_code(), static_cast<int>(ErrorCode::USER_SERVICE_PARAMS_ERROR));
+    EXPECT_FALSE(response.error_msg().empty());
+}
+
+TEST_F(UserServiceImplTest, DeleteVerifyCodeSuccessThenVcodeLoginFail)
+{
+    // 注册用户并获取验证码
+    UserRegisterRequest register_request;
+    register_request.set_request_id("rid_register_for_delete_code");
+    register_request.set_nickname(test_nickname_);
+    register_request.set_password(test_password_);
+    register_request.set_email(test_email_);
+    UserRegisterResponse register_response;
+    user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
+    ASSERT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
+
+    GetCodeRequest get_code_request;
+    get_code_request.set_request_id("rid_get_code_for_delete_code");
+    get_code_request.set_email(test_email_);
+    GetCodeResponse get_code_response;
+    user_service_impl_->GetCode(nullptr, &get_code_request, &get_code_response, nullptr);
+    ASSERT_EQ(get_code_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
+
+    // 从数据访问层读取生成的验证码(测试替身模拟用户从邮箱获取验证码)
+    VerifyCodeData verifycode_data(GetRedisHandle());
+    const auto verifycode_info =
+        verifycode_data.GetVerifyCodeByVerifyCodeId(get_code_response.result().code_id());
+    ASSERT_TRUE(verifycode_info.has_value());
+
+    // 删除验证码成功
+    DeleteVerifyCodeRequest delete_request;
+    delete_request.set_request_id("rid_delete_code_success");
+    delete_request.set_code_id(get_code_response.result().code_id());
+    DeleteVerifyCodeResponse delete_response;
+    user_service_impl_->DeleteVerifyCode(nullptr, &delete_request, &delete_response, nullptr);
+
+    EXPECT_EQ(delete_response.request_id(), "rid_delete_code_success");
+    EXPECT_EQ(delete_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
+    EXPECT_TRUE(delete_response.error_msg().empty());
+
+    // 验证码已失效, 使用原验证码登录失败
+    VcodeLoginRequest login_request;
+    login_request.set_request_id("rid_vcode_login_after_delete");
+    login_request.set_email(test_email_);
+    login_request.set_verify_code(verifycode_info->verify_code);
+    login_request.set_code_id(get_code_response.result().code_id());
+    VcodeLoginResponse login_response;
+    user_service_impl_->VcodeLogin(nullptr, &login_request, &login_response, nullptr);
+
+    EXPECT_EQ(login_response.error_code(), static_cast<int>(ErrorCode::VERIFYCODE_ERROR));
+    EXPECT_FALSE(login_response.error_msg().empty());
+}
+
+TEST_F(UserServiceImplTest, DeleteVerifyCodeWithUnknownCodeIdStillSuccess)
+{
+    // 删除不存在的验证码, hdel 幂等删除, 仍返回成功
+    DeleteVerifyCodeRequest request;
+    request.set_request_id("rid_delete_code_unknown");
+    request.set_code_id("unknown-code-id-000");
+    DeleteVerifyCodeResponse response;
+
+    user_service_impl_->DeleteVerifyCode(nullptr, &request, &response, nullptr);
+
+    EXPECT_EQ(response.request_id(), "rid_delete_code_unknown");
+    EXPECT_EQ(response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
+    EXPECT_TRUE(response.error_msg().empty());
 }
 
 // ==================== 会话登录测试 ====================

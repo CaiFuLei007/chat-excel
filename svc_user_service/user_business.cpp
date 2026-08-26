@@ -285,6 +285,13 @@ std::string UserBusiness::GetVerifyCode(const std::string& email)
     return verifycode_info.verifycode_id;
 }
 
+void UserBusiness::DeleteVerifyCode(const std::string& verifycode_id)
+{
+    // 通过验证码 ID 删除缓存中的验证码信息, 使验证码失效
+    verifycode_data_->DeleteVerifyCodeByVerifyCodeId(verifycode_id);
+    INFO("删除验证码成功, verifycode_id: {}", verifycode_id);
+}
+
 void UserBusiness::Logout(const std::string& session_id)
 {
     // 通过会话 ID 获取用户 ID, 再通过用户 ID 获取用户信息

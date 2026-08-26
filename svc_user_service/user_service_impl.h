@@ -115,6 +115,19 @@ public:
                             google::protobuf::Closure* done) override;
 
     /**
+     * @brief 删除验证码, 通过验证码 ID 删除缓存中的验证码信息,
+     *        用于验证码登录成功后使验证码失效
+     * @param controller RPC 控制器
+     * @param request RPC 请求, 携带验证码 ID
+     * @param response RPC 响应, 携带错误码与错误信息
+     * @param done RPC 结束回调, 由 brpc::ClosureGuard 管理生命周期
+     */
+    virtual void DeleteVerifyCode(google::protobuf::RpcController* controller,
+                                  const proto::DeleteVerifyCodeRequest* request,
+                                  proto::DeleteVerifyCodeResponse* response,
+                                  google::protobuf::Closure* done) override;
+
+    /**
      * @brief 退出登录, 删除会话并将用户状态设置为下线
      * @param controller RPC 控制器
      * @param request RPC 请求, 携带会话 ID
