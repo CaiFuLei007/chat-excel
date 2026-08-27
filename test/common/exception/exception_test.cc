@@ -32,7 +32,7 @@ TEST(GetServiceNameTest, ReturnNameForEachServiceRange)
     EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(250)), "FileService");
     EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(350)), "DatabaseService");
     EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(450)), "ExcelService");
-    EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(550)), "NotifiyService");
+    EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(550)), "NotifyService");
     EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(650)), "AIService");
     EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(750)), "GatewayService");
 }
@@ -49,8 +49,8 @@ TEST(GetServiceNameTest, ReturnNameAtRangeBoundary)
     EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(399)), "DatabaseService");
     EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(400)), "ExcelService");
     EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(499)), "ExcelService");
-    EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(500)), "NotifiyService");
-    EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(599)), "NotifiyService");
+    EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(500)), "NotifyService");
+    EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(599)), "NotifyService");
     EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(600)), "AIService");
     EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(699)), "AIService");
     EXPECT_EQ(chat_excel::GetServiceName(static_cast<ErrorCode>(700)), "GatewayService");

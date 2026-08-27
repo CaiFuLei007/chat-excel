@@ -1,0 +1,62 @@
+
+syntax = "proto3";
+package chat_excel_proto.excel_parse_service;
+option cc_generic_services = true;
+
+//////////////////////// 获取工作表列表 ////////////////////////
+message GetWorksheetsRequest {
+  string request_id = 1; // 请求ID
+  string file_path = 2; // 文件路径
+}
+
+message GetWorksheetsResponse {
+  string request_id = 1; // 请求ID
+  int32 error_code = 2; // 错误码
+  string error_msg = 3; // 错误信息
+  repeated string worksheets = 4; // 工作表列表
+}
+
+//////////////////////// 解析 Excel 文件 ////////////////////////
+message ParseExcelRequest {
+  string request_id = 1; // 请求ID
+  string file_path = 2; // 文件路径
+  repeated string worksheets = 3; // 工作表列表
+}
+
+//////////////////////// 解析 Excel 文件 ////////////////////////
+message ProtoColumnInfo {
+  string name = 1; // 列名
+  string type = 2; // 列类型
+}
+
+message ProtoCellData {
+  string value = 1; // 单元格值
+  string type = 2; // 单元格类型
+}
+
+message RowData {
+  repeated ProtoCellData cells = 1; // 单元格数据
+}
+
+message WorksheetData {
+  string name = 1; // 工作表名
+  repeated ProtoColumnInfo columns = 2; // 列信息
+  repeated RowData rows = 3; // 行数据
+  int32 total_rows = 4; // 总行数
+  int32 total_cols = 5; // 总列数
+}
+
+message ParseExcelResponse {
+  string request_id = 1; // 请求ID
+  int32 error_code = 2; // 错误码
+  string error_msg = 3; // 错误信息
+  repeated WorksheetData worksheets = 4; // 工作表数据
+}
+
+// Excel解析RPC接口定义
+service ExcelParserService {
+  // 获取工作表列表
+  rpc GetWorksheets(GetWorksheetsRequest) returns (GetWorksheetsResponse);
+  // 解析 Excel 文件，返回结构化数据
+  rpc ParseExcel(ParseExcelRequest) returns (ParseExcelResponse);
+}

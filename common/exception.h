@@ -67,6 +67,22 @@ enum class ErrorCode : int
     // 通知子服务 RPC 调用失败(获取信道失败或调用超时/失败)
     USER_NOTIFY_RPC_ERROR = 117,
 
+    // ==================== Excel 解析子服务错误码范围 400 - 499 ====================
+    // Excel 文件打开失败(文件不存在或格式非法)
+    EXCEL_PARSE_FILE_OPEN_FAILED = 400,
+
+    // worksheet 不存在
+    EXCEL_PARSE_WORKSHEET_NOT_FOUND = 401,
+
+    // Excel 解析过程失败
+    EXCEL_PARSE_FAILED = 402,
+
+    // Excel 解析子服务请求参数错误
+    EXCEL_PARSE_PARAMS_ERROR = 403,
+
+    // Excel 解析子服务内部错误
+    EXCEL_PARSE_INTERNAL_ERROR = 404,
+
     // ==================== 通知子服务错误码范围 500 - 599 ====================
     // 邮件发送失败
     NOTIFY_SEND_FAILED = 500,
