@@ -113,4 +113,15 @@ NotifyServer 类搭建 RPC 服务器 , NotifyServerBuilder 构建 NotifyServer .
 1. 程序中异常情况优先使用异常 , 已经对异常进行了封装在 chat-excel/common/exception.h 下 , 必须按照该文件中的说明定义和使用
 2. 使用 <cpp-toolkit/logger.h> 中封装的 spdlog 接口进行日志的输出打印
 
+## 11. 完善用户子服务获取验证码 RPC 请求
+
+chat-excel/svc_user_service/user_business.h 中的`std::string UserBusiness::GetVerifyCode(const std::string& email)` 接口已经完成了验证码 ID , 验证码的生成但是还没有调用 邮箱通知子服务的 RPC 接口发送验证码 , 请完善该接口 , 实现发送验证码的逻辑 :
+1. 通过 ChannelManager 获取通知子服务的通信信道
+2. 创建发送验证码的 RPC 请求
+3. 创建通知子服务的 RPC 客户端
+4. 发送 RPC 请求
+5. 检测 RPC 调用是否成功
+6. 如果调用失败可以抛出具体异常
+
+
 请仔细阅读上述需求 , 然后列出你的详细实现规划 , 具体到每个类的职责以及实现逻辑 , 等我看完确保你和我理解一致后 , 我再告诉你后续实现 

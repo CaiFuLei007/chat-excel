@@ -33,7 +33,7 @@ std::string VerifyCodeEmailSender::BuildEmailBody(const std::string& to_email,
             "letter-spacing:8px;\">" + content + "</span>";
     email_body += "</div>";
     email_body += "<p style=\"margin:0;color:#999999;font-size:12px;text-align:center;\">"
-            "验证码 10 分钟内有效 , 请勿泄露给他人</p>";
+            "验证码 1 分钟内有效 , 请勿泄露给他人</p>";
     email_body += "</div></body></html>";
 
     // 2. 组装完整的 MIME 邮件报文 : 报文头(From/To/Subject/MIME) + base64 编码正文,

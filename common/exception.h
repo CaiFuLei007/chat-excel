@@ -64,6 +64,9 @@ enum class ErrorCode : int
     // 用户子服务内部错误
     USER_SERVICE_INTERNAL_ERROR = 116,
 
+    // 通知子服务 RPC 调用失败(获取信道失败或调用超时/失败)
+    USER_NOTIFY_RPC_ERROR = 117,
+
     // ==================== 通知子服务错误码范围 500 - 599 ====================
     // 邮件发送失败
     NOTIFY_SEND_FAILED = 500,

@@ -4,14 +4,19 @@
 #include <cerrno>
 #include <ctime>
 #include <random>
+#include <brpc/controller.h>
 #include <cpp-toolkit/logger.h>
 #include <cpp-toolkit/util.h>
+#include <notify_service.pb.h>
 #include "common/exception.h"
 
 namespace chat_excel
 {
 namespace user_service
 {
+
+// proto 生成代码所在命名空间的别名, 简化 RPC 类型引用
+namespace proto = ::chat_excel_proto::notify_service;
 
 namespace
 {
@@ -36,6 +41,12 @@ constexpr int kVerifyCodeMax = 999999;
 
 // 时间字符串缓冲区大小, yyyy-MM-dd HH:mm:ss 格式共 19 字符, 预留结尾符空间
 constexpr size_t kTimeBufferSize = 32;
+
+// 通知子服务名称, 用于从信道管理对象获取通知子服务通信信道
+constexpr const char* kNotifyServiceName = "NotifyService";
+
+// 通知子服务 RPC 调用超时时间(毫秒)
+constexpr int kNotifyRpcTimeoutMs = 3000;
 
 /**
  * @brief 获取线程本地的梅森旋转数生成器, thread_local 实例保证多线程并发调用时
@@ -278,6 +289,45 @@ std::string UserBusiness::GetVerifyCode(const std::string& email)
     verifycode_info.verify_code = GenerateSixDigitCode();
     verifycode_info.email = email;
     verifycode_info.create_time = GetCurrentTime();
+
+    // 通过信道管理对象获取通知子服务通信信道
+    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(kNotifyServiceName);
+    if (channel == nullptr)
+    {
+        ERR("获取通知子服务信道失败, 服务名称: {}, email: {}", kNotifyServiceName, email);
+        throw ChatExcelException(ErrorCode::USER_NOTIFY_RPC_ERROR);
+    }
+
+    // 构建发送验证码 RPC 请求, 请求 ID 使用 uuid 生成器生成用于链路追踪
+    proto::SendVerifyCodeRequest rpc_request;
+    rpc_request.set_request_id(verifycode_info.verifycode_id);
+    rpc_request.set_email(email);
+    rpc_request.set_code(verifycode_info.verify_code);
+
+    // 创建通知子服务 RPC 客户端存根
+    proto::NotifyService_Stub notify_service_stub(channel.get());
+
+    // 设置 RPC 调用超时时间后同步发送 RPC 请求
+    brpc::Controller controller;
+    controller.set_timeout_ms(kNotifyRpcTimeoutMs);
+    proto::SendVerifyCodeResponse rpc_response;
+    notify_service_stub.SendVerifyCode(&controller, &rpc_request, &rpc_response, nullptr);
+
+    // 检测 RPC 调用是否成功(网络/超时/信道层面的失败)
+    if (controller.Failed())
+    {
+        ERR("通知子服务 RPC 调用失败, email: {}, 错误信息: {}", email, controller.ErrorText());
+        throw ChatExcelException(ErrorCode::USER_NOTIFY_RPC_ERROR);
+    }
+
+    // 检测通知子服务业务处理结果
+    if (rpc_response.error_code() != static_cast<int>(ErrorCode::SUCCESS))
+    {
+        ERR("通知子服务发送验证码失败, email: {}, 错误码: {}, 错误信息: {}",
+            email, rpc_response.error_code(), rpc_response.error_msg());
+        throw ChatExcelException(ErrorCode::USER_NOTIFY_RPC_ERROR);
+    }
+    INFO("通知子服务发送验证码成功, email: {}", email);
 
     // 将验证码存储到 Redis 缓存中
     verifycode_data_->SaveVerifyCode(verifycode_info);

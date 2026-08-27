@@ -29,10 +29,13 @@ target_include_directories(chat_excel_user_business PUBLIC
 # 链接依赖 :
 #   chat_excel_data : 数据访问层(UserData / SessionData / VerifyCodeData),
 #                    传递链接 odb / odb-mysql / cpp_toolkit
+#   chat_excel_proto : protoc 生成的 RPC 接口代码(GetVerifyCode 调用
+#                      notify_service.pb.h 中 NotifyService_Stub 发送验证码)
 #   cpp_toolkit     : ChannelManager RPC 信道管理封装
 #   crypt           : bcrypt 单向哈希加密(libxcrypt 的 crypt_r 可重入接口)
 target_link_libraries(chat_excel_user_business PUBLIC
     chat_excel_data
+    chat_excel_proto
     cpp_toolkit::cpp_toolkit
     crypt
 )

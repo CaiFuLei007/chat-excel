@@ -28,6 +28,7 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::USER_EMAIL_EXISTS), "用户邮箱已存在"},
         {static_cast<int>(ErrorCode::USER_SERVICE_PARAMS_ERROR), "用户子服务请求参数错误"},
         {static_cast<int>(ErrorCode::USER_SERVICE_INTERNAL_ERROR), "用户子服务内部错误"},
+        {static_cast<int>(ErrorCode::USER_NOTIFY_RPC_ERROR), "通知子服务 RPC 调用失败"},
         {static_cast<int>(ErrorCode::NOTIFY_SEND_FAILED), "邮件发送失败"},
         {static_cast<int>(ErrorCode::NOTIFY_VERIFYCODE_EMAIL_EMPTY), "验证码邮件接收方邮箱为空"},
         {static_cast<int>(ErrorCode::NOTIFY_VERIFYCODE_CODE_EMPTY), "验证码为空"},

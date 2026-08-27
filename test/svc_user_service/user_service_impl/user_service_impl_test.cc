@@ -3,6 +3,8 @@
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <brpc/closure_guard.h>
+#include <brpc/server.h>
 #include <odb/database.hxx>
 #include <odb/transaction.hxx>
 #include <sw/redis++/redis.h>
@@ -11,6 +13,7 @@
 #include <cpp-toolkit/redis.h>
 #include <cpp-toolkit/rpc.h>
 #include <gtest/gtest.h>
+#include <notify_service.pb.h>
 #include "common/exception.h"
 #include "data/session_data.h"
 #include "data/user_data.h"
@@ -61,6 +64,60 @@ constexpr const char* kSessionCacheKey = "session_data";
 
 // 验证码缓存 hash 类型的 key(与 VerifyCodeData 实现保持一致)
 constexpr const char* kVerifyCodeCacheKey = "verifycode_data";
+
+// mock 通知子服务名称(与 UserBusiness 实现保持一致)
+constexpr const char* kNotifyServiceName = "NotifyService";
+
+// mock 通知子服务监听端口(避开常用端口, 降低端口冲突概率)
+constexpr int kNotifyMockServerPort = 28991;
+
+/**
+ * @brief 通知子服务 mock 实现, 对所有 RPC 请求均返回成功,
+ *        用于替代真实通知子服务支撑 GetCode 接口的测试
+ */
+class MockNotifyServiceImpl : public chat_excel_proto::notify_service::NotifyService
+{
+public:
+    void SendVerifyCode(google::protobuf::RpcController* /*controller*/,
+                        const chat_excel_proto::notify_service::SendVerifyCodeRequest* request,
+                        chat_excel_proto::notify_service::SendVerifyCodeResponse* response,
+                        google::protobuf::Closure* done) override
+    {
+        brpc::ClosureGuard closure_guard(done);
+        response->set_request_id(request->request_id());
+        response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
+    }
+
+    void SendEmail(google::protobuf::RpcController* /*controller*/,
+                   const chat_excel_proto::notify_service::SendEmailRequest* request,
+                   chat_excel_proto::notify_service::SendEmailResponse* response,
+                   google::protobuf::Closure* done) override
+    {
+        brpc::ClosureGuard closure_guard(done);
+        response->set_request_id(request->request_id());
+        response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
+    }
+};
+
+/**
+ * @brief 获取 mock 通知子服务监听地址, 服务器进程内只启动一次
+ * @return "ip:port" 格式的监听地址字符串
+ */
+const std::string& GetNotifyMockServerAddr()
+{
+    static const std::string server_addr = [] {
+        static MockNotifyServiceImpl notify_service_impl;
+        static brpc::Server server;
+        brpc::ServerOptions server_options;
+        server.AddService(&notify_service_impl, brpc::SERVER_DOESNT_OWN_SERVICE);
+        if (server.Start(kNotifyMockServerPort, &server_options) != 0)
+        {
+            GTEST_LOG_(FATAL) << "mock 通知子服务启动失败, 端口: " << kNotifyMockServerPort;
+        }
+        return "127.0.0.1:" + std::to_string(kNotifyMockServerPort);
+    }();
+    return server_addr;
+}
 
 /**
  * @brief 获取必填环境变量的值
@@ -138,6 +195,9 @@ protected:
         auto verifycode_data = std::make_shared<VerifyCodeData>(GetRedisHandle());
         auto session_manager = std::make_shared<SessionManager>(session_data, user_data);
         auto channel_manager = std::make_shared<cpp_toolkit::ChannelManager>();
+        // 声明关心通知子服务并注册 mock 信道, 支撑 GetCode 接口调用通知子服务发送验证码
+        channel_manager->SetCareService(kNotifyServiceName);
+        channel_manager->AddService(kNotifyServiceName, GetNotifyMockServerAddr());
         auto user_business = std::make_shared<UserBusiness>(session_manager, verifycode_data, user_data,
                                                             channel_manager);
         user_service_impl_ = std::make_unique<UserServiceImpl>(user_business);
