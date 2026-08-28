@@ -67,6 +67,58 @@ enum class ErrorCode : int
     // 通知子服务 RPC 调用失败(获取信道失败或调用超时/失败)
     USER_NOTIFY_RPC_ERROR = 117,
 
+    // ==================== 文件子服务错误码范围 200 - 299 ====================
+    // 保存文件信息到数据库失败
+    FILE_SAVE_TO_MYSQL_ERROR = 200,
+
+    // 更新数据库中的文件信息失败
+    FILE_UPDATE_IN_MYSQL_ERROR = 201,
+
+    // 通过文件 ID 获取文件信息失败
+    FILE_GET_BY_FILE_ID_ERROR = 202,
+
+    // 通过文件 ID 删除文件信息失败
+    FILE_DELETE_BY_FILE_ID_ERROR = 203,
+
+    // 通过用户 ID 获取文件列表失败
+    FILE_GET_LIST_BY_USER_ID_ERROR = 204,
+
+    // 文件数据 JSON 序列化或反序列化失败
+    FILE_DATA_SERIALIZE_ERROR = 205,
+
+    // 文件数据不存在
+    FILE_DATA_NOT_FOUND = 206,
+
+    // 保存文件数据到缓存失败
+    FILE_SAVE_TO_CACHE_ERROR = 207,
+
+    // 通过文件 ID 从缓存获取文件信息失败
+    FILE_GET_FROM_CACHE_BY_FILE_ID_ERROR = 208,
+
+    // 通过文件 ID 删除缓存文件信息失败
+    FILE_DELETE_FROM_CACHE_BY_FILE_ID_ERROR = 209,
+
+    // 保存 WorkSheet 信息到数据库失败
+    WORKSHEET_SAVE_TO_MYSQL_ERROR = 210,
+
+    // 通过文件 ID 获取 WorkSheet 信息失败
+    WORKSHEET_GET_BY_FILE_ID_ERROR = 211,
+
+    // 通过文件 ID 删除 WorkSheet 信息失败
+    WORKSHEET_DELETE_BY_FILE_ID_ERROR = 212,
+
+    // WorkSheet 数据 JSON 序列化或反序列化失败
+    WORKSHEET_DATA_SERIALIZE_ERROR = 213,
+
+    // 保存 WorkSheet 数据到缓存失败
+    WORKSHEET_SAVE_TO_CACHE_ERROR = 214,
+
+    // 通过文件 ID 从缓存获取 WorkSheet 信息失败
+    WORKSHEET_GET_FROM_CACHE_BY_FILE_ID_ERROR = 215,
+
+    // 通过文件 ID 删除缓存 WorkSheet 信息失败
+    WORKSHEET_DELETE_FROM_CACHE_BY_FILE_ID_ERROR = 216,
+
     // ==================== Excel 解析子服务错误码范围 400 - 499 ====================
     // Excel 文件打开失败(文件不存在或格式非法)
     EXCEL_PARSE_FILE_OPEN_FAILED = 400,

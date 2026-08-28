@@ -63,4 +63,39 @@ const std::string& FileEntity::SessionId() const
     return session_id_;
 }
 
+void FileEntity::SetFileName(const std::string& file_name)
+{
+    file_name_ = file_name;
+}
+
+void FileEntity::SetFileExtension(const std::string& file_extension)
+{
+    file_extension_ = file_extension;
+}
+
+void FileEntity::SetFileSize(unsigned long long file_size)
+{
+    file_size_ = file_size;
+}
+
+void FileEntity::SetFileUploadTime(unsigned long long file_upload_time)
+{
+    file_upload_time_ = file_upload_time;
+}
+
+void FileEntity::SetFastdfsFileId(const std::string& fastdfs_file_id)
+{
+    fastdfs_file_id_ = fastdfs_file_id;
+}
+
+void FileEntity::SetUserId(const std::string& user_id)
+{
+    user_id_ = user_id;
+}
+
+void FileEntity::SetSessionId(const std::string& session_id)
+{
+    session_id_ = session_id;
+}
+
 } // namespace chat_excel
