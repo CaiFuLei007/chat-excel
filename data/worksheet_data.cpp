@@ -73,8 +73,7 @@ bool SerializeWorkSheetList(const std::string& file_id, const std::vector<WorkSh
  * @param json_str JSON 字符串
  * @return 反序列化成功返回 WorkSheet 信息列表, JSON 格式错误时返回空列表
  */
-std::vector<WorkSheetInfo> DeserializeWorkSheetList(const std::string& file_id,
-                                                    const std::string& json_str)
+std::vector<WorkSheetInfo> DeserializeWorkSheetList(const std::string& json_str)
 {
     std::vector<WorkSheetInfo> worksheet_list;
     Json::Value json;
@@ -224,7 +223,7 @@ std::vector<WorkSheetInfo> WorkSheetData::GetWorkSheetListByFileIdFromCache(cons
         }
 
         // 反序列化失败(缓存数据损坏)视为缓存未命中, 由上层回源数据库
-        return DeserializeWorkSheetList(file_id, *value);
+        return DeserializeWorkSheetList(*value);
     }
     catch (const sw::redis::Error& e)
     {

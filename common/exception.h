@@ -119,6 +119,24 @@ enum class ErrorCode : int
     // 通过文件 ID 删除缓存 WorkSheet 信息失败
     WORKSHEET_DELETE_FROM_CACHE_BY_FILE_ID_ERROR = 216,
 
+    // 当前用户与文件属主不一致
+    FILE_USER_MISMATCH = 217,
+
+    // 上传文件数据到 FastDFS 失败
+    FILE_FDFS_UPLOAD_ERROR = 218,
+
+    // 从 FastDFS 下载文件数据失败
+    FILE_FDFS_DOWNLOAD_ERROR = 219,
+
+    // 从 FastDFS 删除文件数据失败
+    FILE_FDFS_DELETE_ERROR = 220,
+
+    // Excel 解析子服务 RPC 调用失败(获取信道失败或调用超时/失败)
+    FILE_EXCEL_PARSE_RPC_ERROR = 221,
+
+    // 本地文件读写操作失败
+    FILE_LOCAL_FILE_ERROR = 222,
+
     // ==================== Excel 解析子服务错误码范围 400 - 499 ====================
     // Excel 文件打开失败(文件不存在或格式非法)
     EXCEL_PARSE_FILE_OPEN_FAILED = 400,

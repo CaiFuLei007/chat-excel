@@ -35,6 +35,9 @@ add_subdirectory(svc_email_notify_service)
 # Excel 解析子服务
 add_subdirectory(svc_excel_parse_service)
 
+# 文件子服务
+add_subdirectory(svc_file_service)
+
 # 查找 gtest 测试框架
 find_package(GTest REQUIRED)
 
@@ -56,6 +59,9 @@ add_subdirectory(test/svc_user_service/verifycode_data)
 # 文件子服务数据访问层单元测试
 add_subdirectory(test/svc_file_service/file_data)
 add_subdirectory(test/svc_file_service/worksheet_data)
+
+# 文件子服务业务逻辑层单元测试
+add_subdirectory(test/svc_file_service/file_business)
 
 # 用户子服务 RPC 接口实现层单元测试
 add_subdirectory(test/svc_user_service/user_service_impl)

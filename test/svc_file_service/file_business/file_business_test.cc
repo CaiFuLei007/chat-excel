@@ -1,0 +1,583 @@
+#include "svc_file_service/file_business.h"
+
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+#include <brpc/server.h>
+#include <cpp-toolkit/logger.h>
+#include <cpp-toolkit/odb.h>
+#include <cpp-toolkit/rpc.h>
+#include <cpp-toolkit/redis.h>
+#include <excel_parse_service.pb.h>
+#include <gtest/gtest.h>
+#include <odb/database.hxx>
+#include <odb/transaction.hxx>
+#include <sw/redis++/redis.h>
+#include "common/exception.h"
+#include "data/file_data.h"
+#include "data/worksheet_data.h"
+// FastDFS 客户端头文件必须最后导入 : 其依赖的 fastcommon 头文件会向全局作用域
+// 定义 byte 等宏, 先行导入会破坏 fmt/boost 等后续头文件的解析
+#include <cpp-toolkit/fdfs.h>
+
+using chat_excel::ChatExcelException;
+using chat_excel::ErrorCode;
+using chat_excel::file_service::FileBusiness;
+using chat_excel::file_service::FileData;
+using chat_excel::file_service::FileInfo;
+using chat_excel::file_service::WorkSheetData;
+using chat_excel::file_service::WorkSheetInfo;
+
+namespace
+{
+
+// proto 生成类型命名空间别名
+namespace proto = ::chat_excel_proto::excel_parse_service;
+
+// mock Excel 解析子服务监听端口
+constexpr int kExcelParseMockServerPort = 28992;
+
+// Excel 解析子服务名称(与 FileBusiness 实现中的常量保持一致)
+constexpr const char* kExcelParseServiceName = "ExcelParseService";
+
+// FastDFS tracker 服务器地址(本地 docker 容器)
+constexpr const char* kFdfsTrackerAddr = "127.0.0.1:22122";
+
+// 测试用户 ID 与会话 ID(长度受表结构 VARCHAR(32) 限制)
+constexpr const char* kTestUserId = "uid_for_fb_test";
+constexpr const char* kOtherUserId = "uid_other_fb_test";
+constexpr const char* kTestSessionId = "sid_for_fb_test";
+
+// 测试请求 ID
+constexpr const char* kRequestId = "rid_for_fb_test";
+
+// 文件缓存与 WorkSheet 缓存 hash 类型的 key(与数据层实现保持一致)
+constexpr const char* kFileCacheKey = "file_data";
+constexpr const char* kWorkSheetCacheKey = "worksheet_data";
+
+// 本地暂存文件根目录(与 FileBusiness 实现中的常量保持一致)
+constexpr const char* kLocalExcelFilesDir = "build/excel_files";
+
+/**
+ * @brief 获取必填环境变量的值
+ * @param name 环境变量名
+ * @return 环境变量的值
+ */
+std::string GetRequiredEnv(const char* name)
+{
+    const char* value = std::getenv(name);
+    if (value == nullptr)
+    {
+        GTEST_LOG_(FATAL) << "环境变量 " << name << " 未设置";
+    }
+    return value;
+}
+
+/**
+ * @brief 获取 MySQL 操作句柄(进程内单例), 配置从环境变量读取
+ * @return MySQL 操作句柄
+ */
+std::shared_ptr<odb::database>& GetMysqlHandle()
+{
+    static std::shared_ptr<odb::database> handle = [] {
+        cpp_toolkit::MySQLSettings settings;
+        settings.database = GetRequiredEnv("MYSQL_CHAT_EXCEL_TEST_DATABASE");
+        settings.user = GetRequiredEnv("MYSQL_CHAT_EXCEL_TEST_USER");
+        settings.password = GetRequiredEnv("MYSQL_CHAT_EXCEL_TEST_PASSWORD");
+        settings.host = GetRequiredEnv("MYSQL_CHAT_EXCEL_TEST_HOST");
+        settings.port = std::stoul(GetRequiredEnv("MYSQL_CHAT_EXCEL_TEST_PORT"));
+        settings.charset = GetRequiredEnv("MYSQL_CHAT_EXCEL_TEST_CHARSET");
+        return cpp_toolkit::ODBFactory::Create(settings);
+    }();
+    return handle;
+}
+
+/**
+ * @brief 获取 Redis 操作句柄(进程内单例), 配置从环境变量读取
+ * @return Redis 操作句柄
+ */
+std::shared_ptr<sw::redis::Redis>& GetRedisHandle()
+{
+    static std::shared_ptr<sw::redis::Redis> handle = [] {
+        cpp_toolkit::RedisSettings settings;
+        settings.host = GetRequiredEnv("Redis_CHAT_EXCEL_TEST_HOST");
+        settings.port = std::stoi(GetRequiredEnv("Redis_CHAT_EXCEL_TEST_PORT"));
+        settings.user = GetRequiredEnv("Redis_CHAT_EXCEL_TEST_USER");
+        settings.password = GetRequiredEnv("Redis_CHAT_EXCEL_TEST_PASSWORD");
+        settings.db = std::stoi(GetRequiredEnv("Redis_CHAT_EXCEL_TEST_INDEX"));
+        return cpp_toolkit::RedisFactory::Create(settings);
+    }();
+    return handle;
+}
+
+/**
+ * @brief 初始化 FastDFS 客户端(进程内只执行一次), 连接本地 docker 容器中的 tracker
+ */
+void InitFdfsClient()
+{
+    static const bool inited = [] {
+        cpp_toolkit::FdfsSettings settings;
+        settings.tracker_servers_.emplace_back(kFdfsTrackerAddr);
+        if (!cpp_toolkit::FdfsClient::Init(settings))
+        {
+            GTEST_LOG_(FATAL) << "FastDFS 客户端初始化失败, tracker: " << kFdfsTrackerAddr;
+        }
+        return true;
+    }();
+    (void)inited;
+}
+
+/**
+ * @brief mock Excel 解析子服务 : 校验请求的本地文件存在, 返回固定的工作表
+ *        列表与解析结果, 用于验证 FileBusiness 上传文件数据的完整流程
+ */
+class MockExcelParserServiceImpl : public proto::ExcelParserService
+{
+public:
+    void GetWorksheets(google::protobuf::RpcController* /*controller*/,
+                       const proto::GetWorksheetsRequest* request,
+                       proto::GetWorksheetsResponse* response,
+                       google::protobuf::Closure* done) override
+    {
+        brpc::ClosureGuard closure_guard(done);
+        response->set_request_id(request->request_id());
+
+        // 校验业务层已将文件保存到本地(文件不存在视为打开失败)
+        if (!std::filesystem::exists(request->file_path()))
+        {
+            response->set_error_code(static_cast<int>(ErrorCode::EXCEL_PARSE_FILE_OPEN_FAILED));
+            response->set_error_msg("mock: 本地文件不存在");
+            return;
+        }
+        response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
+        response->add_worksheets("Sheet1");
+        response->add_worksheets("Sheet2");
+    }
+
+    void ParseExcel(google::protobuf::RpcController* /*controller*/,
+                    const proto::ParseExcelRequest* request,
+                    proto::ParseExcelResponse* response,
+                    google::protobuf::Closure* done) override
+    {
+        brpc::ClosureGuard closure_guard(done);
+        response->set_request_id(request->request_id());
+
+        // 校验业务层已将文件保存到本地(文件不存在视为打开失败)
+        if (!std::filesystem::exists(request->file_path()))
+        {
+            response->set_error_code(static_cast<int>(ErrorCode::EXCEL_PARSE_FILE_OPEN_FAILED));
+            response->set_error_msg("mock: 本地文件不存在");
+            return;
+        }
+        response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
+
+        // 逐个构建 mock 工作表解析结果 : 名称 + 2 列信息 + 1 行数据
+        for (const std::string& worksheet_name : request->worksheets())
+        {
+            proto::WorksheetData* worksheet = response->add_worksheets();
+            worksheet->set_name(worksheet_name);
+            worksheet->set_total_rows(1);
+            worksheet->set_total_cols(2);
+
+            proto::ProtoColumnInfo* name_column = worksheet->add_columns();
+            name_column->set_name("名称");
+            name_column->set_type("String");
+            proto::ProtoColumnInfo* count_column = worksheet->add_columns();
+            count_column->set_name("数量");
+            count_column->set_type("Integer");
+
+            proto::RowData* row = worksheet->add_rows();
+            proto::ProtoCellData* name_cell = row->add_cells();
+            name_cell->set_value("apple");
+            name_cell->set_type("String");
+            proto::ProtoCellData* count_cell = row->add_cells();
+            count_cell->set_value("10");
+            count_cell->set_type("Integer");
+        }
+    }
+};
+
+/**
+ * @brief 获取 mock Excel 解析子服务监听地址, 服务器进程内只启动一次
+ * @return "ip:port" 格式的监听地址字符串
+ */
+const std::string& GetExcelParseMockServerAddr()
+{
+    static const std::string server_addr = [] {
+        static MockExcelParserServiceImpl excel_parse_service_impl;
+        static brpc::Server server;
+        brpc::ServerOptions server_options;
+        server.AddService(&excel_parse_service_impl, brpc::SERVER_DOESNT_OWN_SERVICE);
+        if (server.Start(kExcelParseMockServerPort, &server_options) != 0)
+        {
+            GTEST_LOG_(FATAL) << "mock Excel 解析子服务启动失败, 端口: " << kExcelParseMockServerPort;
+        }
+        return "127.0.0.1:" + std::to_string(kExcelParseMockServerPort);
+    }();
+    return server_addr;
+}
+
+/**
+ * @brief 断言业务调用抛出指定错误码的异常
+ * @param call 业务调用 lambda
+ * @param expected_code 期望的错误码
+ */
+template <typename Call>
+void ExpectBusinessError(Call call, ErrorCode expected_code)
+{
+    try
+    {
+        call();
+        FAIL() << "预期抛出 ChatExcelException 但未抛出";
+    }
+    catch (const ChatExcelException& e)
+    {
+        EXPECT_EQ(e.error_code(), expected_code);
+    }
+}
+
+} // namespace
+
+// 文件业务逻辑类测试夹具, 每个用例执行前清理数据库/缓存/本地暂存文件中的测试数据
+class FileBusinessTest : public ::testing::Test
+{
+protected:
+    void SetUp() override
+    {
+        // 清理数据库与缓存中的测试数据, 避免唯一键冲突与脏数据
+        odb::transaction transaction(GetMysqlHandle()->begin());
+        GetMysqlHandle()->execute("DELETE FROM tbl_file_info");
+        GetMysqlHandle()->execute("DELETE FROM tbl_worksheet_info");
+        transaction.commit();
+        GetRedisHandle()->del(kFileCacheKey);
+        GetRedisHandle()->del(kWorkSheetCacheKey);
+
+        // 清理本地暂存目录
+        std::error_code error_code;
+        std::filesystem::remove_all(kLocalExcelFilesDir, error_code);
+
+        // 初始化 FastDFS 客户端, 连接本地 docker 容器
+        InitFdfsClient();
+
+        // 构建信道管理对象, 注册关心服务后添加 mock Excel 解析子服务地址
+        // (AddService 只对 SetCareService 预注册的关心服务生效)
+        channel_manager_ = std::make_shared<cpp_toolkit::ChannelManager>();
+        channel_manager_->SetCareService(kExcelParseServiceName);
+        channel_manager_->AddService(kExcelParseServiceName, GetExcelParseMockServerAddr());
+
+        // 构建文件业务逻辑对象, 依赖对象全部由外部注入
+        const std::shared_ptr<FileData> file_data =
+            std::make_shared<FileData>(GetMysqlHandle(), GetRedisHandle());
+        const std::shared_ptr<WorkSheetData> worksheet_data =
+            std::make_shared<WorkSheetData>(GetMysqlHandle(), GetRedisHandle());
+        file_business_ = std::make_unique<FileBusiness>(file_data, worksheet_data, channel_manager_);
+    }
+
+    void TearDown() override
+    {
+        // 清理测试产生的本地暂存文件
+        std::error_code error_code;
+        std::filesystem::remove_all(kLocalExcelFilesDir, error_code);
+    }
+
+    /**
+     * @brief 上传测试文件信息(测试用户上传 xlsx 文件), 返回生成的文件 ID
+     */
+    std::string UploadTestFileInfo()
+    {
+        return file_business_->UploadFileInfo(kRequestId, kTestUserId, kTestSessionId,
+                                              "test_excel.xlsx", "xlsx", 10 * 1024);
+    }
+
+    // 文件业务逻辑对象
+    std::unique_ptr<FileBusiness> file_business_;
+
+    // RPC 信道管理对象
+    cpp_toolkit::ChannelManager::Ptr channel_manager_;
+};
+
+// 上传文件信息 : 生成 32 字符文件 ID 并成功保存文件元信息
+TEST_F(FileBusinessTest, UploadFileInfoGeneratesFileId)
+{
+    const std::string file_id = UploadTestFileInfo();
+    // uuid 去掉连字符后为 32 字符
+    EXPECT_EQ(file_id.size(), 32u);
+
+    const FileInfo file_info = file_business_->GetFileInfo(kRequestId, kTestUserId, file_id);
+    EXPECT_EQ(file_info.file_id, file_id);
+    EXPECT_EQ(file_info.file_name, "test_excel.xlsx");
+    EXPECT_EQ(file_info.file_extension, "xlsx");
+    EXPECT_EQ(file_info.file_size, 10 * 1024u);
+    EXPECT_GT(file_info.file_upload_time, 0u);
+    EXPECT_TRUE(file_info.fastdfs_file_id.empty());
+    EXPECT_EQ(file_info.user_id, kTestUserId);
+    EXPECT_EQ(file_info.session_id, kTestSessionId);
+}
+
+// 获取文件信息 : 缓存命中时数据库记录被删除仍能读取(Cache-Aside 读策略)
+TEST_F(FileBusinessTest, GetFileInfoCacheAsideHit)
+{
+    const std::string file_id = UploadTestFileInfo();
+
+    // 第一次读取会回填缓存
+    const FileInfo file_info = file_business_->GetFileInfo(kRequestId, kTestUserId, file_id);
+    EXPECT_EQ(file_info.file_id, file_id);
+
+    // 删除 MySQL 中的记录后再读取, 缓存命中仍能获取文件信息
+    odb::transaction transaction(GetMysqlHandle()->begin());
+    GetMysqlHandle()->execute("DELETE FROM tbl_file_info");
+    transaction.commit();
+    const FileInfo cached_file_info = file_business_->GetFileInfo(kRequestId, kTestUserId, file_id);
+    EXPECT_EQ(cached_file_info.file_id, file_id);
+}
+
+// 获取文件信息 : 文件不存在时抛出异常
+TEST_F(FileBusinessTest, GetFileInfoNotFound)
+{
+    ExpectBusinessError(
+        [this] { file_business_->GetFileInfo(kRequestId, kTestUserId, "fid_not_exist"); },
+        ErrorCode::FILE_DATA_NOT_FOUND);
+}
+
+// 获取文件信息 : 当前用户与文件属主不一致时抛出异常
+TEST_F(FileBusinessTest, GetFileInfoOwnerMismatch)
+{
+    const std::string file_id = UploadTestFileInfo();
+    ExpectBusinessError(
+        [this, &file_id] { file_business_->GetFileInfo(kRequestId, kOtherUserId, file_id); },
+        ErrorCode::FILE_USER_MISMATCH);
+}
+
+// 上传文件数据 : 完整流程(FastDFS 上传 + 元信息更新 + WorkSheet 保存 + 本地文件删除)
+TEST_F(FileBusinessTest, UploadFileDataFullFlow)
+{
+    const std::string file_id = UploadTestFileInfo();
+    const std::string file_content = "mock excel binary content for upload test";
+
+    file_business_->UploadFileData(kRequestId, kTestUserId, file_id, file_content);
+
+    // 校验 MySQL 中 fastdfs_file_id 已更新
+    FileData file_data(GetMysqlHandle(), GetRedisHandle());
+    const std::optional<FileInfo> stored_file_info = file_data.GetFileByFileId(file_id);
+    ASSERT_TRUE(stored_file_info.has_value());
+    EXPECT_FALSE(stored_file_info->fastdfs_file_id.empty());
+
+    // 校验 WorkSheet 元信息已保存, 表名称格式为 {file_id}_{worksheet_name}
+    WorkSheetData worksheet_data(GetMysqlHandle(), GetRedisHandle());
+    const std::vector<WorkSheetInfo> worksheet_list =
+        worksheet_data.GetWorkSheetListByFileId(file_id);
+    ASSERT_EQ(worksheet_list.size(), 2u);
+    EXPECT_EQ(worksheet_list[0].file_id, file_id);
+    EXPECT_EQ(worksheet_list[0].worksheet_name, "Sheet1");
+    EXPECT_EQ(worksheet_list[0].table_name, file_id + "_Sheet1");
+    EXPECT_EQ(worksheet_list[1].file_id, file_id);
+    EXPECT_EQ(worksheet_list[1].worksheet_name, "Sheet2");
+    EXPECT_EQ(worksheet_list[1].table_name, file_id + "_Sheet2");
+
+    // 校验本地暂存文件已删除
+    const std::string local_file_path =
+        std::string(kLocalExcelFilesDir) + "/" + kTestUserId + "/" + file_id + "_test_excel.xlsx";
+    EXPECT_FALSE(std::filesystem::exists(local_file_path));
+
+    // 校验 FastDFS 中文件数据可下载且内容一致
+    const std::string downloaded_content =
+        file_business_->DownloadFileData(kRequestId, kTestUserId, file_id);
+    EXPECT_EQ(downloaded_content, file_content);
+}
+
+// 上传文件数据 : 当前用户与文件属主不一致时抛出异常
+TEST_F(FileBusinessTest, UploadFileDataOwnerMismatch)
+{
+    const std::string file_id = UploadTestFileInfo();
+    ExpectBusinessError(
+        [this, &file_id] { file_business_->UploadFileData(kRequestId, kOtherUserId, file_id, "content"); },
+        ErrorCode::FILE_USER_MISMATCH);
+}
+
+// 上传文件数据 : 文件不存在时抛出异常
+TEST_F(FileBusinessTest, UploadFileDataFileNotFound)
+{
+    ExpectBusinessError(
+        [this] { file_business_->UploadFileData(kRequestId, kTestUserId, "fid_not_exist", "content"); },
+        ErrorCode::FILE_DATA_NOT_FOUND);
+}
+
+// 下载文件数据 : 文件数据尚未上传到 FastDFS 时抛出异常
+TEST_F(FileBusinessTest, DownloadFileDataNotUploaded)
+{
+    const std::string file_id = UploadTestFileInfo();
+    ExpectBusinessError(
+        [this, &file_id] { file_business_->DownloadFileData(kRequestId, kTestUserId, file_id); },
+        ErrorCode::FILE_FDFS_DOWNLOAD_ERROR);
+}
+
+// 下载文件数据 : 当前用户与文件属主不一致时抛出异常
+TEST_F(FileBusinessTest, DownloadFileDataOwnerMismatch)
+{
+    const std::string file_id = UploadTestFileInfo();
+    file_business_->UploadFileData(kRequestId, kTestUserId, file_id, "content");
+    ExpectBusinessError(
+        [this, &file_id] { file_business_->DownloadFileData(kRequestId, kOtherUserId, file_id); },
+        ErrorCode::FILE_USER_MISMATCH);
+}
+
+// 删除文件 : 完整流程(FastDFS + WorkSheet 元信息 + MySQL + 缓存全部删除)
+TEST_F(FileBusinessTest, DeleteFileFullFlow)
+{
+    const std::string file_id = UploadTestFileInfo();
+    file_business_->UploadFileData(kRequestId, kTestUserId, file_id, "content for delete test");
+
+    // 记录 FastDFS 文件 ID, 用于删除后校验 FastDFS 文件已被删除
+    FileData file_data(GetMysqlHandle(), GetRedisHandle());
+    const std::optional<FileInfo> stored_file_info = file_data.GetFileByFileId(file_id);
+    ASSERT_TRUE(stored_file_info.has_value());
+    const std::string fastdfs_file_id = stored_file_info->fastdfs_file_id;
+
+    file_business_->DeleteFile(kRequestId, kTestUserId, file_id);
+
+    // 校验 MySQL 与缓存中的文件信息已删除
+    EXPECT_FALSE(file_data.GetFileByFileId(file_id).has_value());
+    EXPECT_FALSE(file_data.GetFileByFileIdFromCache(file_id).has_value());
+
+    // 校验 WorkSheet 元信息已删除
+    WorkSheetData worksheet_data(GetMysqlHandle(), GetRedisHandle());
+    EXPECT_TRUE(worksheet_data.GetWorkSheetListByFileId(file_id).empty());
+
+    // 校验 FastDFS 中的文件数据已删除(下载失败)
+    std::string downloaded_content;
+    EXPECT_FALSE(cpp_toolkit::FdfsClient::DownloadToBuffer(fastdfs_file_id, downloaded_content));
+}
+
+// 删除文件 : 当前用户与文件属主不一致时抛出异常且不删除任何数据
+TEST_F(FileBusinessTest, DeleteFileOwnerMismatch)
+{
+    const std::string file_id = UploadTestFileInfo();
+    ExpectBusinessError(
+        [this, &file_id] { file_business_->DeleteFile(kRequestId, kOtherUserId, file_id); },
+        ErrorCode::FILE_USER_MISMATCH);
+
+    FileData file_data(GetMysqlHandle(), GetRedisHandle());
+    EXPECT_TRUE(file_data.GetFileByFileId(file_id).has_value());
+}
+
+// 删除文件信息 : 校验属主后删除数据库与缓存中的文件信息
+TEST_F(FileBusinessTest, DeleteFileInfoSuccess)
+{
+    const std::string file_id = UploadTestFileInfo();
+    file_business_->DeleteFileInfo(kRequestId, kTestUserId, file_id);
+
+    FileData file_data(GetMysqlHandle(), GetRedisHandle());
+    EXPECT_FALSE(file_data.GetFileByFileId(file_id).has_value());
+    EXPECT_FALSE(file_data.GetFileByFileIdFromCache(file_id).has_value());
+}
+
+// 获取文件列表 : 只返回当前用户上传的文件
+TEST_F(FileBusinessTest, GetFileListReturnsOnlyUserFiles)
+{
+    UploadTestFileInfo();
+    UploadTestFileInfo();
+    file_business_->UploadFileInfo(kRequestId, kOtherUserId, kTestSessionId,
+                                   "other.xlsx", "xlsx", 10 * 1024);
+
+    const std::vector<FileInfo> file_list = file_business_->GetFileList(kRequestId, kTestUserId);
+    ASSERT_EQ(file_list.size(), 2u);
+    for (const FileInfo& file_info : file_list)
+    {
+        EXPECT_EQ(file_info.user_id, kTestUserId);
+    }
+
+    const std::vector<FileInfo> other_file_list =
+        file_business_->GetFileList(kRequestId, kOtherUserId);
+    EXPECT_EQ(other_file_list.size(), 1u);
+}
+
+// 预览 Excel 文件 : 返回文件信息(解析结果获取暂未实现)
+TEST_F(FileBusinessTest, PreviewExcelReturnsFileInfo)
+{
+    const std::string file_id = UploadTestFileInfo();
+    const FileInfo file_info = file_business_->PreviewExcel(kRequestId, kTestUserId, file_id, 1, 10);
+    EXPECT_EQ(file_info.file_id, file_id);
+    EXPECT_EQ(file_info.file_name, "test_excel.xlsx");
+}
+
+// 预览 Excel 文件 : 当前用户与文件属主不一致时抛出异常
+TEST_F(FileBusinessTest, PreviewExcelOwnerMismatch)
+{
+    const std::string file_id = UploadTestFileInfo();
+    ExpectBusinessError(
+        [this, &file_id] { file_business_->PreviewExcel(kRequestId, kOtherUserId, file_id, 1, 10); },
+        ErrorCode::FILE_USER_MISMATCH);
+}
+
+// 上传 SQLite 文件数据与获取 SQLite 文件 : FastDFS 上传后可下载到本地且内容一致
+TEST_F(FileBusinessTest, UploadSQLiteFileAndGet)
+{
+    const std::string file_id = file_business_->UploadFileInfo(
+        kRequestId, kTestUserId, kTestSessionId, "test.db", "db", 5 * 1024);
+    const std::string file_content = "mock sqlite binary content";
+
+    file_business_->UploadSQLiteFileData(kRequestId, kTestUserId, file_id, file_content);
+
+    // 校验 MySQL 中 fastdfs_file_id 已更新
+    FileData file_data(GetMysqlHandle(), GetRedisHandle());
+    const std::optional<FileInfo> stored_file_info = file_data.GetFileByFileId(file_id);
+    ASSERT_TRUE(stored_file_info.has_value());
+    EXPECT_FALSE(stored_file_info->fastdfs_file_id.empty());
+
+    // 获取 SQLite 文件到本地并校验内容一致
+    const std::string local_file_path =
+        file_business_->GetSQLiteFile(kRequestId, kTestUserId, file_id);
+    EXPECT_TRUE(std::filesystem::exists(local_file_path));
+    std::ifstream file_stream(local_file_path, std::ios::binary);
+    const std::string local_content((std::istreambuf_iterator<char>(file_stream)),
+                                    std::istreambuf_iterator<char>());
+    EXPECT_EQ(local_content, file_content);
+}
+
+// 获取 SQLite 文件 : 文件数据尚未上传到 FastDFS 时抛出异常
+TEST_F(FileBusinessTest, GetSQLiteFileNotUploaded)
+{
+    const std::string file_id = file_business_->UploadFileInfo(
+        kRequestId, kTestUserId, kTestSessionId, "test.db", "db", 5 * 1024);
+    ExpectBusinessError(
+        [this, &file_id] { file_business_->GetSQLiteFile(kRequestId, kTestUserId, file_id); },
+        ErrorCode::FILE_FDFS_DOWNLOAD_ERROR);
+}
+
+// 获取 SQLite 文件 : 当前用户与文件属主不一致时抛出异常
+TEST_F(FileBusinessTest, GetSQLiteFileOwnerMismatch)
+{
+    const std::string file_id = file_business_->UploadFileInfo(
+        kRequestId, kTestUserId, kTestSessionId, "test.db", "db", 5 * 1024);
+    file_business_->UploadSQLiteFileData(kRequestId, kTestUserId, file_id, "content");
+    ExpectBusinessError(
+        [this, &file_id] { file_business_->GetSQLiteFile(kRequestId, kOtherUserId, file_id); },
+        ErrorCode::FILE_USER_MISMATCH);
+}
+
+// 关联文件和聊天会话 : 暂未实现, 调用不抛出异常
+TEST_F(FileBusinessTest, HandleFileChatSessionMapDoesNotThrow)
+{
+    const std::string file_id = UploadTestFileInfo();
+    EXPECT_NO_THROW(
+        file_business_->HandleFileChatSessionMap(kRequestId, kTestUserId, file_id, "chat_session_1"));
+}
+
+int main(int argc, char** argv)
+{
+    // 初始化日志输出到控制台, 便于观察业务层日志
+    // loggerName 必须非空 : spdlog 注册中心已存在名为空字符串的默认 logger, 空名称会因重名抛出异常
+    cpp_toolkit::logger_settings settings;
+    settings.async = false;
+    settings.loggerName = "file_business_test";
+    settings.loggerFile = "stdout";
+    cpp_toolkit::Logger::initLogger(settings);
+
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}
