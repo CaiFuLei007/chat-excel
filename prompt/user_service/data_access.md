@@ -78,7 +78,6 @@
 
 ## 4. 注意事项
 
-
 1. 密码会在逻辑层进行加密 , 数据层拿到的是已经完成加密的密码 , 不需要再进行加密
 2. 如果需要定义通用结构体 , 将结构体放在 chat-excel/svc_user_service 下的 common.h 中
 3. 使用 <cpp-toolkit/util.h> 中封装的 JsonUtil 来进行序列化和反序列化

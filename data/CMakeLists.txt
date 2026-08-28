@@ -20,6 +20,8 @@ find_package(cpp_toolkit REQUIRED)
 set(ENTITY_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/user_entity.h
     ${CMAKE_CURRENT_SOURCE_DIR}/session_entity.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/file_entity.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/work_sheet_entity.h
 )
 
 # odb 生成代码输出目录(数据库支持代码)与建表 SQL 输出目录
@@ -35,12 +37,20 @@ set(ODB_CODE_FILES
     ${ODB_CODE_DIR}/session_entity-odb.hxx
     ${ODB_CODE_DIR}/session_entity-odb.ixx
     ${ODB_CODE_DIR}/session_entity-odb.cxx
+    ${ODB_CODE_DIR}/file_entity-odb.hxx
+    ${ODB_CODE_DIR}/file_entity-odb.ixx
+    ${ODB_CODE_DIR}/file_entity-odb.cxx
+    ${ODB_CODE_DIR}/work_sheet_entity-odb.hxx
+    ${ODB_CODE_DIR}/work_sheet_entity-odb.ixx
+    ${ODB_CODE_DIR}/work_sheet_entity-odb.cxx
 )
 
 # odb 编译后生成的建表 SQL 文件
 set(ODB_SQL_FILES
     ${ODB_SQL_DIR}/user_entity.sql
     ${ODB_SQL_DIR}/session_entity.sql
+    ${ODB_SQL_DIR}/file_entity.sql
+    ${ODB_SQL_DIR}/work_sheet_entity.sql
 )
 
 # 运行 odb 编译器编译映射类, 选项说明 :
@@ -62,8 +72,12 @@ add_custom_command(
         ${ODB_CODE_DIR}/user_entity.sql ${ODB_SQL_DIR}/user_entity.sql
     COMMAND ${CMAKE_COMMAND} -E rename
         ${ODB_CODE_DIR}/session_entity.sql ${ODB_SQL_DIR}/session_entity.sql
+    COMMAND ${CMAKE_COMMAND} -E rename
+        ${ODB_CODE_DIR}/file_entity.sql ${ODB_SQL_DIR}/file_entity.sql
+    COMMAND ${CMAKE_COMMAND} -E rename
+        ${ODB_CODE_DIR}/work_sheet_entity.sql ${ODB_SQL_DIR}/work_sheet_entity.sql
     DEPENDS ${ENTITY_HEADERS}
-    COMMENT "正在使用 odb 编译数据库映射类(user_entity.h / session_entity.h)"
+    COMMENT "正在使用 odb 编译数据库映射类(user_entity.h / session_entity.h / file_entity.h / work_sheet_entity.h)"
     VERBATIM
 )
 
@@ -75,11 +89,15 @@ add_custom_command(
 add_library(chat_excel_data STATIC
     user_entity.cc
     session_entity.cc
+    file_entity.cc
+    work_sheet_entity.cc
     user_data.cpp
     session_data.cpp
     verifycode_data.cpp
     ${ODB_CODE_DIR}/user_entity-odb.cxx
     ${ODB_CODE_DIR}/session_entity-odb.cxx
+    ${ODB_CODE_DIR}/file_entity-odb.cxx
+    ${ODB_CODE_DIR}/work_sheet_entity-odb.cxx
 )
 
 # 头文件搜索路径 :
