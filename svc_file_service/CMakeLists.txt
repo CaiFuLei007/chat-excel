@@ -6,6 +6,9 @@
 # 已声明 brpc/protobuf/spdlog 等底层传递依赖)
 find_package(cpp_toolkit REQUIRED)
 
+# gflags 命令行参数解析库(main.cc 直接使用 gflags 符号, 显式声明不依赖传递导入)
+find_package(gflags REQUIRED)
+
 # =================================================================
 #                         生成静态库(业务逻辑层)
 # =================================================================
@@ -56,4 +59,33 @@ target_link_libraries(chat_excel_file_service PUBLIC
     chat_excel_file_business
     chat_excel_proto
     cpp_toolkit::cpp_toolkit
+)
+
+# =================================================================
+#                         生成可执行文件(服务层)
+# =================================================================
+
+# 文件子服务可执行文件 : RPC 服务器/服务器构建器 + 程序入口
+add_executable(file_service
+    file_server.cc
+    main.cc
+)
+
+# 头文件搜索路径 : 项目根目录(支持 #include "svc_file_service/file_server.h" 方式导入)
+target_include_directories(file_service PRIVATE
+    ${PROJECT_SOURCE_DIR}
+)
+
+# 链接依赖 :
+#   chat_excel_file_service : RPC 接口实现层(传递链接 业务逻辑层/数据访问层/proto/cpp_toolkit)
+#   cpp_toolkit             : file_server.cc/main.cc 直接使用
+#                             ServerFactory/SvcWatcher/SvcProvider/FdfsClient/logger,
+#                             依"不依赖间接导入"规则显式声明
+#   gflags                  : main.cc 直接使用 gflags 符号, 显式声明
+#   pthread                 : 服务监控线程使用 std::thread
+target_link_libraries(file_service PRIVATE
+    chat_excel_file_service
+    cpp_toolkit::cpp_toolkit
+    gflags
+    pthread
 )
