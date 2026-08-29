@@ -43,12 +43,20 @@
 2. 检查当前 user_id 与 文件信息中的 user_id 是否一致 ,如果不一致 , 则抛出异常
 3. 调用数据库子服务 , 传入 FastDFS 文件ID , 下载 sqlite 文件保存到数据库子服务的本地目录下 , 并进行解析(TODO 注释进行标记 , 暂不实现)\
 
-## 为 tbl_file_info 表添加索引
+## 4. 为 tbl_file_info 表添加索引
 
 文件 ID , 用户 ID 字段添加索引 , 用于快速查找文件信息
 
+## 5. 将 tbl_file_info 表中的 fastdfs_file_id 和 session_id 字段去除 NOT NULL 约束
 
-## 4. 补充
+1. 向表中插入文件信息时 , 文件还没有上传到 FastDFS 中 , 因此一开始上传的时候 , fastdfs_file_id 字段为空
+2. session_id 需要通过 关联文件和聊天会话 整个 RPC 接口进行设置 , 将 session_id 设置到对应的 文件信息中 , 因此 session_id 字段一开始的时候也为空
+
+## 6. 完成 关联文件和聊天会话 接口
+1. 实现 FileBusiness::HandleFileChatSessionMap 方法 , 将 RPC 参数中的 session_id 设置到 file_id 对应的文件信息中 , 修改 MySQL 中的数据 , 同时删除 Redis 中的缓存
+2. 实现 FileServiceImpl::HandleFileChatSessionMap RPC 方法
+
+## 补充
 
 1. 对文件子服务中 fastdfs 的操作方式进行修改 , 统一使用 <cpptoolkit/fdfs.h> 封装的接口操作 fastdfs
 

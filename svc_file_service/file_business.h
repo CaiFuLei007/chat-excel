@@ -145,7 +145,8 @@ public:
                               const std::string& file_id);
 
     /**
-     * @brief 关联文件和聊天会话(暂未实现)
+     * @brief 关联文件和聊天会话, 校验文件属主后将聊天会话 ID 设置到
+     *        文件信息中(写策略 Cache-Aside: 先改数据库再删缓存)
      * @param request_id 请求 ID, 用于日志链路追踪
      * @param user_id 用户 ID
      * @param file_id 文件 ID

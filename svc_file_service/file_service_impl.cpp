@@ -552,7 +552,9 @@ void FileServiceImpl::HandleFileChatSessionMap(google::protobuf::RpcController* 
             return;
         }
 
-        // TODO: 调用业务逻辑层关联文件和聊天会话, 当前业务逻辑层为空实现
+        // 调用业务逻辑层关联文件和聊天会话
+        file_business_->HandleFileChatSessionMap(request->request_id(), request->user_id(),
+                                                 request->file_id(), request->chat_session_id());
 
         // 成功仅设置成功错误码, 不添加成功的描述信息
         response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));

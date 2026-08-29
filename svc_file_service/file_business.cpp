@@ -434,9 +434,16 @@ void FileBusiness::HandleFileChatSessionMap(const std::string& request_id, const
                                             const std::string& file_id,
                                             const std::string& chat_session_id)
 {
-    // TODO: 实现文件和聊天会话的关联管理
-    INFO("关联文件和聊天会话暂未实现, request_id: {}, user_id: {}, file_id: {}, 会话 ID: {}",
-         request_id, user_id, file_id, chat_session_id);
+    // 获取文件信息并校验文件属主
+    const FileInfo file_info = GetFileInfoWithOwnerCheck(request_id, user_id, file_id);
+
+    // 更新 MySQL 中的 session_id 字段(写策略 Cache-Aside: 先改数据库再删缓存)
+    FileInfo updated_file_info = file_info;
+    updated_file_info.session_id = chat_session_id;
+    file_data_->UpdateFile(updated_file_info);
+    file_data_->DeleteFileByFileIdFromCache(file_info.file_id);
+    INFO("关联文件和聊天会话成功, request_id: {}, file_id: {}, 会话 ID: {}",
+         request_id, file_info.file_id, chat_session_id);
 }
 
 std::vector<std::string> FileBusiness::GetWorksheetDBTables(const std::string& request_id,
