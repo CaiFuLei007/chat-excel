@@ -12,13 +12,13 @@
 | 字段名 | 类型 | 约束 | 主键 | 说明|
 | --- | --- | --- | --- | --- |
 | id | BIGINT UNSIGNED | NOT NULL | PRIMARY KEY AUTO_INCREMENT | | 文件信息表主键 |
-| file_id | VARCHAR(32) | NOT NULL | UNIQUE | Excel 文件唯一标识符 |
+| file_id | VARCHAR(32) | NOT NULL | UNIQUE INDEX | Excel 文件唯一标识符 |
 | file_name | VARCHAR(64) | NOT NULL | | Excel 文件名 |
 | file_extension | VARCHAR(16) | NOT NULL | | Excel 文件扩展名 |
 | file_size | BIGINT UNSIGNED | NOT NULL | | Excel 文件大小 |
 | file_upload_time | BIGINT UNSIGNED | NOT NULL | | Excel 文件上传时间 |
 | fastdfs_file_id | VARCHAR(64) | NOT NULL | | Excel 文件在 FastDFS 中的文件 ID |
-| user_id | VARCHAR(32) | NOT NULL | | 文件所属用户 ID |
+| user_id | VARCHAR(32) | NOT NULL | INDEX | 文件所属用户 ID |
 | session_id | VARCHAR(32) | NOT NULL | | 文件所属会话 ID |
 
 说明 : 

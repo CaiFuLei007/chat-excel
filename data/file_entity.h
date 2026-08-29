@@ -144,6 +144,7 @@ private:
     unsigned long long id_;
 
     // Excel 文件唯一标识符, 通过该字段获取指定文件的元信息
+    // unique 约束自动创建唯一索引, 保证字段唯一性的同时支持快速查找文件信息
 #ifdef ODB_COMPILER
 #pragma db column("file_id") type("VARCHAR(32)") unique
 #endif
@@ -179,9 +180,10 @@ private:
 #endif
     std::string fastdfs_file_id_;
 
-    // 文件所属用户 ID
+    // 文件所属用户 ID, 普通索引用于快速查找用户的文件信息
 #ifdef ODB_COMPILER
 #pragma db column("user_id") type("VARCHAR(32)") not_null
+#pragma db index
 #endif
     std::string user_id_;
 
