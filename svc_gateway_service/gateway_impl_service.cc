@@ -9,6 +9,7 @@
 #include <cpp-toolkit/util.h>
 #include <jsoncpp/json/json.h>
 #include "common/exception.h"
+#include "file_service.pb.h"
 #include "user_service.pb.h"
 
 namespace chat_excel
@@ -17,14 +18,23 @@ namespace chat_excel
 // proto 生成代码所在命名空间的别名, 简化 RPC 客户端调用
 namespace proto = ::chat_excel_proto::user_service;
 
+// 文件子服务 proto 生成代码所在命名空间的别名, 简化 RPC 客户端调用
+namespace file_proto = ::chat_excel_proto::file_service;
+
 namespace
 {
 
 // 用户子服务名称(与用户子服务注册到 ETCD 注册中心的服务名保持一致)
 constexpr char kUserServiceName[] = "UserService";
 
+// 文件子服务名称(与文件子服务注册到 ETCD 注册中心的服务名保持一致)
+constexpr char kFileServiceName[] = "FileService";
+
 // 用户子服务 RPC 调用超时时间(毫秒)
 constexpr int kRpcTimeoutMilliseconds = 3000;
+
+// 文件子服务 RPC 调用超时时间(毫秒), 文件上传/下载涉及大二进制数据传输, 超时时间较长
+constexpr int kFileRpcTimeoutMilliseconds = 30 * 1000;
 
 // HTTP 成功状态码
 constexpr int kHttpStatusOk = 200;
@@ -35,8 +45,14 @@ constexpr int kHttpStatusInternalError = 500;
 // 网关错误码 : 请求参数错误
 constexpr int kGatewayErrorCodeParams = 400;
 
-// 网关错误码 : 后端服务不可用
+// 网关错误码 : 后端子服务不可用
 constexpr int kGatewayErrorCodeUnavailable = 503;
+
+// [F06] 预览 Excel 文件接口的默认页码(分页参数缺省时使用)
+constexpr int kDefaultPreviewPageNumber = 1;
+
+// [F06] 预览 Excel 文件接口的默认每页行数(分页参数缺省时使用)
+constexpr int kDefaultPreviewPageSize = 50;
 
 /**
  * @brief 解析 HTTP 请求体 JSON, 提取请求 ID
@@ -59,6 +75,25 @@ bool ParseJsonBody(const httplib::Request& request, Json::Value& request_json, s
     if (request_id.empty())
     {
         ERR("请求体缺少 requestId 字段或字段为空, 请求路径: {}", request.path);
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief 解析 HTTP 请求 query 参数中的通用字段(请求 ID 与会话 ID), 用于参数在 query 中的文件接口
+ * @param request HTTP 请求对象
+ * @param request_id 输出参数, query 中的请求 ID
+ * @param session_id 输出参数, query 中的会话 ID
+ * @return true 两个参数均非空, false 存在缺失或空值
+ */
+bool ParseQueryBaseParams(const httplib::Request& request, std::string& request_id, std::string& session_id)
+{
+    request_id = request.get_param_value("requestId");
+    session_id = request.get_param_value("sessionId");
+    if (request_id.empty() || session_id.empty())
+    {
+        ERR("请求 query 参数错误, requestId 或 sessionId 为空, 请求路径: {}", request.path);
         return false;
     }
     return true;
@@ -131,6 +166,67 @@ bool CallUserRpc(const std::string& request_id,
         error_code = kGatewayErrorCodeUnavailable;
         error_msg = "用户子服务 RPC 调用失败 : " + controller.ErrorText();
         return false;
+    }
+
+    // RPC 调用成功但业务处理失败, 透传后端业务错误码与错误信息
+    error_code = rpc_response.error_code();
+    error_msg = rpc_response.error_msg();
+    if (error_code != static_cast<int>(ErrorCode::SUCCESS))
+    {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief 文件子服务 RPC 同步调用通用流程封装, 内部完成超时设置、附件传输、接口调用与结果检查
+ * @param request_id 请求 ID, 用于日志链路追踪
+ * @param file_service_stub 文件子服务 RPC 客户端存根
+ * @param rpc_method RPC 客户端成员函数指针, 指向调用的 RPC 接口
+ * @param rpc_request RPC 请求对象
+ * @param rpc_response 输出参数, RPC 响应对象
+ * @param error_code 输出参数, 调用失败时的错误码(RPC 调用失败为网关错误码 503, 业务失败为透传的后端业务错误码)
+ * @param error_msg 输出参数, 调用失败时的错误信息
+ * @param request_attachment 请求附件指针, 文件上传场景指向文件二进制数据, 无附件时传 nullptr(brpc attachment 无需序列化, 零拷贝传输)
+ * @param response_attachment 输出参数指针, 文件下载场景指向接收文件二进制数据的字符串, 无附件时传 nullptr
+ * @return true RPC 调用成功且业务处理成功, false RPC 调用失败或业务处理失败(错误信息通过输出参数返回)
+ */
+template <typename RequestType, typename ResponseType>
+bool CallFileRpc(const std::string& request_id,
+                 file_proto::FileService_Stub* file_service_stub,
+                 void (file_proto::FileService_Stub::*rpc_method)(google::protobuf::RpcController*, const RequestType*, ResponseType*, google::protobuf::Closure*),
+                 const RequestType& rpc_request,
+                 ResponseType& rpc_response,
+                 int& error_code,
+                 std::string& error_msg,
+                 const std::string* request_attachment = nullptr,
+                 std::string* response_attachment = nullptr)
+{
+    // 同步调用文件子服务的 RPC 接口, 设置调用超时时间
+    brpc::Controller controller;
+    controller.set_timeout_ms(kFileRpcTimeoutMilliseconds);
+
+    // 文件上传场景, 文件二进制数据写入请求 attachment 传输
+    if (request_attachment != nullptr)
+    {
+        controller.request_attachment().append(*request_attachment);
+    }
+
+    (file_service_stub->*rpc_method)(&controller, &rpc_request, &rpc_response, nullptr);
+
+    // RPC 调用失败(网络超时、服务不可达等), 返回后端服务不可用错误码
+    if (controller.Failed())
+    {
+        ERR("文件子服务 RPC 调用失败, requestId: {}, 错误信息: {}", request_id, controller.ErrorText());
+        error_code = kGatewayErrorCodeUnavailable;
+        error_msg = "文件子服务 RPC 调用失败 : " + controller.ErrorText();
+        return false;
+    }
+
+    // 文件下载场景, 从响应 attachment 中提取文件二进制数据
+    if (response_attachment != nullptr)
+    {
+        *response_attachment = controller.response_attachment().to_string();
     }
 
     // RPC 调用成功但业务处理失败, 透传后端业务错误码与错误信息
@@ -372,8 +468,22 @@ std::unique_ptr<proto::UserService_Stub> GatewayServiceImpl::CreateUserRpcStub(c
     return std::make_unique<proto::UserService_Stub>(channel.get());
 }
 
+std::unique_ptr<file_proto::FileService_Stub> GatewayServiceImpl::CreateFileRpcStub(cpp_toolkit::ChannelPtr& channel)
+{
+    // 获取文件子服务信道
+    channel = GetServiceChannel(kFileServiceName);
+    if (channel == nullptr)
+    {
+        ERR("获取文件子服务信道失败, 服务名称: {}", kFileServiceName);
+        return nullptr;
+    }
+
+    // 创建文件子服务 RPC 客户端存根, 信道对象通过输出参数交由调用方持有(存根依赖信道对象存活)
+    return std::make_unique<file_proto::FileService_Stub>(channel.get());
+}
+
 bool GatewayServiceImpl::CheckSessionValid(const std::string& request_id, const std::string& session_id,
-                                           int& error_code, std::string& error_msg)
+                                           std::string& user_id, int& error_code, std::string& error_msg)
 {
     // 创建用户子服务 RPC 客户端
     cpp_toolkit::ChannelPtr channel;
@@ -399,6 +509,9 @@ bool GatewayServiceImpl::CheckSessionValid(const std::string& request_id, const 
             request_id, session_id, error_code, error_msg);
         return false;
     }
+
+    // 会话有效, 提取会话所属用户 ID, 作为后续文件等子服务 RPC 请求的参数
+    user_id = rpc_response.user_id();
     return true;
 }
 
@@ -815,7 +928,8 @@ void GatewayServiceImpl::HandleUserLogout(const httplib::Request& request, httpl
     // 2. 鉴权, 检查会话是否有效, 失败时透传错误码与错误信息
     int error_code = 0;
     std::string error_msg;
-    if (!CheckSessionValid(request_id, session_id, error_code, error_msg))
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
     {
         SendEnvelopeResponse(response, request_id, error_code, error_msg);
         return;
@@ -863,10 +977,11 @@ void GatewayServiceImpl::HandleUserInfo(const httplib::Request& request, httplib
         return;
     }
 
-    // 2. 鉴权, 检查会话是否有效, 失败时透传错误码与错误信息
+    // 2. 鉴权, 检查会话是否有效, 失败时透传错误码与错误信息(鉴权用户 ID 与 query 中的 userId 互不影响)
     int error_code = 0;
     std::string error_msg;
-    if (!CheckSessionValid(request_id, session_id, error_code, error_msg))
+    std::string auth_user_id;
+    if (!CheckSessionValid(request_id, session_id, auth_user_id, error_code, error_msg))
     {
         SendEnvelopeResponse(response, request_id, error_code, error_msg);
         return;
@@ -907,58 +1022,660 @@ void GatewayServiceImpl::HandleUserInfo(const httplib::Request& request, httplib
     INFO("[U09] 获取用户信息接口处理完成, requestId: {}, errorCode: {}", request_id, error_code);
 }
 
-void GatewayServiceImpl::HandleFileUploadInfo(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleFileUploadInfo(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[F01] 上传文件信息接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求体, 提取请求 ID、会话 ID 与文件信息
+    Json::Value request_json;
+    std::string request_id;
+    if (!ParseJsonBody(request, request_json, request_id))
+    {
+        SendEnvelopeResponse(response, "", kGatewayErrorCodeParams, "请求体 JSON 解析失败或缺少 requestId 字段");
+        return;
+    }
+    std::string session_id = request_json["sessionId"].asString();
+    const Json::Value& file_info_json = request_json["fileInfo"];
+    std::string filename = file_info_json["filename"].asString();
+    int64_t file_size = file_info_json["fileSize"].asInt64();
+    std::string file_ext = file_info_json["fileExt"].asString();
+    if (session_id.empty() || filename.empty() || file_ext.empty() || file_size <= 0)
+    {
+        ERR("[F01] 请求参数错误, sessionId 或 fileInfo 存在缺失或非法值, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : sessionId 与 fileInfo(filename/fileSize/fileExt) 不能为空, fileSize 必须为正整数");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效并获取用户 ID, 失败时透传错误码与错误信息
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建文件子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<file_proto::FileService_Stub> file_service_stub = CreateFileRpcStub(channel);
+    if (file_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "文件子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求(请求体中的 chatSessionId 为可选字段, 文件与聊天会话的映射统一由 [F08] 接口建立)
+    file_proto::UploadFileInfoRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_session_id(session_id);
+    rpc_request.mutable_file_info()->set_filename(filename);
+    rpc_request.mutable_file_info()->set_file_size(file_size);
+    rpc_request.mutable_file_info()->set_file_ext(file_ext);
+    rpc_request.set_user_id(user_id);
+
+    // 5. 调用文件子服务的 RPC 接口, 失败时透传错误码与错误信息
+    file_proto::UploadFileInfoResponse rpc_response;
+    if (!CallFileRpc(request_id, file_service_stub.get(), &file_proto::FileService_Stub::UploadFileInfo,
+                     rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建文件信息登记结果(文件 ID)并发送 HTTP 响应
+    Json::Value result;
+    result["fileId"] = rpc_response.result().file_id();
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);
+    INFO("[F01] 上传文件信息接口处理完成, requestId: {}, fileId: {}, errorCode: {}",
+         request_id, rpc_response.result().file_id(), error_code);
 }
 
-void GatewayServiceImpl::HandleFileInfo(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleFileInfo(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[F02] 获取文件信息接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求 query 参数(本接口参数全部在 query 中, 请求体为空)
+    std::string request_id;
+    std::string session_id;
+    if (!ParseQueryBaseParams(request, request_id, session_id))
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : requestId 与 sessionId 不能为空");
+        return;
+    }
+    std::string file_id = request.get_param_value("fileId");
+    if (file_id.empty())
+    {
+        ERR("[F02] 请求参数错误, fileId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : fileId 不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效并获取用户 ID, 失败时透传错误码与错误信息
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建文件子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<file_proto::FileService_Stub> file_service_stub = CreateFileRpcStub(channel);
+    if (file_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "文件子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求
+    file_proto::GetFileInfoRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_session_id(session_id);
+    rpc_request.set_file_id(file_id);
+    rpc_request.set_user_id(user_id);
+
+    // 5. 调用文件子服务的 RPC 接口, 失败时透传错误码与错误信息
+    file_proto::GetFileInfoResponse rpc_response;
+    if (!CallFileRpc(request_id, file_service_stub.get(), &file_proto::FileService_Stub::GetFileInfo,
+                     rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建文件信息结果并发送 HTTP 响应
+    const file_proto::FileDetail& file_detail = rpc_response.result();
+    Json::Value result;
+    result["fileId"] = file_detail.file_id();
+    result["fileName"] = file_detail.file_name();
+    result["fileSize"] = static_cast<Json::Int64>(file_detail.file_size());
+    result["uploadTime"] = static_cast<Json::Int64>(file_detail.upload_time());
+    result["fileExt"] = file_detail.file_ext();
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);
+    INFO("[F02] 获取文件信息接口处理完成, requestId: {}, fileId: {}, errorCode: {}",
+         request_id, file_id, error_code);
 }
 
-void GatewayServiceImpl::HandleFileUpload(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleFileUpload(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[F03] 上传文件数据接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求 query 参数, 请求体为文件二进制数据
+    std::string request_id;
+    std::string session_id;
+    if (!ParseQueryBaseParams(request, request_id, session_id))
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : requestId 与 sessionId 不能为空");
+        return;
+    }
+    std::string file_id = request.get_param_value("fileId");
+    if (file_id.empty())
+    {
+        ERR("[F03] 请求参数错误, fileId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : fileId 不能为空");
+        return;
+    }
+    if (request.body.empty())
+    {
+        ERR("[F03] 请求参数错误, 文件二进制数据为空, requestId: {}, fileId: {}", request_id, file_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : 文件二进制数据不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效并获取用户 ID, 失败时透传错误码与错误信息
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建文件子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<file_proto::FileService_Stub> file_service_stub = CreateFileRpcStub(channel);
+    if (file_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "文件子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求
+    file_proto::UploadFileRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_session_id(session_id);
+    rpc_request.set_file_id(file_id);
+    rpc_request.set_user_id(user_id);
+
+    // 5. 调用文件子服务的 RPC 接口, 文件二进制数据通过请求 attachment 传输, 失败时透传错误码与错误信息
+    file_proto::UploadFileResponse rpc_response;
+    if (!CallFileRpc(request_id, file_service_stub.get(), &file_proto::FileService_Stub::UploadFile,
+                     rpc_request, rpc_response, error_code, error_msg, &request.body))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建上传结果(回显文件 ID, RPC 响应中不携带文件 ID)并发送 HTTP 响应
+    Json::Value result;
+    result["fileId"] = file_id;
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);
+    INFO("[F03] 上传文件数据接口处理完成, requestId: {}, fileId: {}, 文件大小: {}, errorCode: {}",
+         request_id, file_id, request.body.size(), error_code);
 }
 
-void GatewayServiceImpl::HandleFileDownload(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleFileDownload(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[F04] 下载文件接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求 query 参数(本接口参数全部在 query 中, 请求体为空)
+    std::string request_id;
+    std::string session_id;
+    if (!ParseQueryBaseParams(request, request_id, session_id))
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : requestId 与 sessionId 不能为空");
+        return;
+    }
+    std::string file_id = request.get_param_value("fileId");
+    if (file_id.empty())
+    {
+        ERR("[F04] 请求参数错误, fileId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : fileId 不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效并获取用户 ID, 失败时透传错误码与错误信息
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建文件子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<file_proto::FileService_Stub> file_service_stub = CreateFileRpcStub(channel);
+    if (file_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "文件子服务不可用");
+        return;
+    }
+
+    // 4. 先调用 GetFileInfo RPC 接口获取文件名, 用于设置下载响应头中的文件名
+    file_proto::GetFileInfoRequest info_request;
+    info_request.set_request_id(request_id);
+    info_request.set_session_id(session_id);
+    info_request.set_file_id(file_id);
+    info_request.set_user_id(user_id);
+    file_proto::GetFileInfoResponse info_response;
+    if (!CallFileRpc(request_id, file_service_stub.get(), &file_proto::FileService_Stub::GetFileInfo,
+                     info_request, info_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+    std::string filename = info_response.result().file_name();
+
+    // 5. 调用 DownloadFile RPC 接口, 文件二进制数据通过响应 attachment 传输, 失败时透传错误码与错误信息
+    file_proto::DownloadFileRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_session_id(session_id);
+    rpc_request.set_file_id(file_id);
+    rpc_request.set_user_id(user_id);
+    file_proto::DownloadFileResponse rpc_response;
+    std::string file_content;
+    if (!CallFileRpc(request_id, file_service_stub.get(), &file_proto::FileService_Stub::DownloadFile,
+                     rpc_request, rpc_response, error_code, error_msg, nullptr, &file_content))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建文件下载响应(二进制流, 不套用通用信封), 文件名通过 Content-Disposition 响应头返回
+    response.status = kHttpStatusOk;
+    response.set_content(file_content, "application/octet-stream");
+    response.set_header("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+    INFO("[F04] 下载文件接口处理完成, requestId: {}, fileId: {}, 文件名: {}, 文件大小: {}",
+         request_id, file_id, filename, file_content.size());
 }
 
-void GatewayServiceImpl::HandleFileDelete(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleFileDelete(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[F05] 删除文件接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求参数, fileId 为路径参数, requestId 与 sessionId 在 query 中
+    std::string request_id;
+    std::string session_id;
+    if (!ParseQueryBaseParams(request, request_id, session_id))
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : requestId 与 sessionId 不能为空");
+        return;
+    }
+    std::string file_id = request.matches[1].str();
+    if (file_id.empty())
+    {
+        ERR("[F05] 请求参数错误, 路径中的 fileId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : fileId 不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效并获取用户 ID, 失败时透传错误码与错误信息
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建文件子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<file_proto::FileService_Stub> file_service_stub = CreateFileRpcStub(channel);
+    if (file_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "文件子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求
+    file_proto::DeleteFileRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_session_id(session_id);
+    rpc_request.set_file_id(file_id);
+    rpc_request.set_user_id(user_id);
+
+    // 5. 调用文件子服务的 RPC 接口, 失败时透传错误码与错误信息
+    file_proto::DeleteFileResponse rpc_response;
+    if (!CallFileRpc(request_id, file_service_stub.get(), &file_proto::FileService_Stub::DeleteFile,
+                     rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建 HTTP 响应(接口无返回数据, 成功时按 API 约定返回"删除成功"提示)
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, "删除成功");
+    INFO("[F05] 删除文件接口处理完成, requestId: {}, fileId: {}, errorCode: {}", request_id, file_id, error_code);
 }
 
-void GatewayServiceImpl::HandleFilePreview(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleFilePreview(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[F06] 预览 Excel 文件接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求体, 提取请求 ID、会话 ID、文件 ID 与分页参数
+    Json::Value request_json;
+    std::string request_id;
+    if (!ParseJsonBody(request, request_json, request_id))
+    {
+        SendEnvelopeResponse(response, "", kGatewayErrorCodeParams, "请求体 JSON 解析失败或缺少 requestId 字段");
+        return;
+    }
+    std::string session_id = request_json["sessionId"].asString();
+    std::string file_id = request_json["fileId"].asString();
+    if (session_id.empty() || file_id.empty())
+    {
+        ERR("[F06] 请求参数错误, sessionId 或 fileId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : sessionId 与 fileId 不能为空");
+        return;
+    }
+    // 分页参数为可选字段, 缺省时使用默认页码与每页行数
+    int page_number = request_json["pageNumber"].asInt();
+    int page_size = request_json["pageSize"].asInt();
+    if (page_number <= 0)
+    {
+        page_number = kDefaultPreviewPageNumber;
+    }
+    if (page_size <= 0)
+    {
+        page_size = kDefaultPreviewPageSize;
+    }
+
+    // 2. 鉴权, 检查会话是否有效并获取用户 ID, 失败时透传错误码与错误信息
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建文件子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<file_proto::FileService_Stub> file_service_stub = CreateFileRpcStub(channel);
+    if (file_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "文件子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求
+    file_proto::PreviewExcelRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_session_id(session_id);
+    rpc_request.set_file_id(file_id);
+    rpc_request.set_page_number(page_number);
+    rpc_request.set_page_size(page_size);
+    rpc_request.set_user_id(user_id);
+
+    // 5. 调用文件子服务的 RPC 接口, 失败时透传错误码与错误信息
+    file_proto::PreviewExcelResponse rpc_response;
+    if (!CallFileRpc(request_id, file_service_stub.get(), &file_proto::FileService_Stub::PreviewExcel,
+                     rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建预览结果并发送 HTTP 响应(行数据构建为二维数组)
+    const file_proto::PreviewExcelResult& preview_result = rpc_response.result();
+    Json::Value result;
+    result["fileId"] = preview_result.file_id();
+    result["fileName"] = preview_result.file_name();
+    result["fileSize"] = static_cast<Json::Int64>(preview_result.file_size());
+    result["fileExt"] = preview_result.file_ext();
+
+    Json::Value sheets(Json::arrayValue);
+    for (const file_proto::Sheet& sheet : preview_result.excel_data().sheets())
+    {
+        Json::Value sheet_json;
+        sheet_json["name"] = sheet.name();
+        sheet_json["totalRows"] = sheet.total_rows();
+        sheet_json["colCount"] = sheet.col_count();
+        sheet_json["currentPage"] = sheet.current_page();
+        sheet_json["totalPages"] = sheet.total_pages();
+        sheet_json["pageSize"] = sheet.page_size();
+
+        Json::Value columns(Json::arrayValue);
+        for (const std::string& column : sheet.columns())
+        {
+            columns.append(column);
+        }
+        sheet_json["columns"] = columns;
+
+        Json::Value rows(Json::arrayValue);
+        for (const file_proto::Row& row : sheet.data())
+        {
+            Json::Value row_json(Json::arrayValue);
+            for (const std::string& cell : row.cells())
+            {
+                row_json.append(cell);
+            }
+            rows.append(row_json);
+        }
+        sheet_json["data"] = rows;
+        sheets.append(sheet_json);
+    }
+    Json::Value excel_data_json;
+    excel_data_json["sheets"] = sheets;
+    result["excelData"] = excel_data_json;
+
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);
+    INFO("[F06] 预览 Excel 文件接口处理完成, requestId: {}, fileId: {}, errorCode: {}",
+         request_id, file_id, error_code);
 }
 
-void GatewayServiceImpl::HandleFileList(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleFileList(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[F07] 获取用户文件列表接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求体, 提取请求 ID 与会话 ID
+    Json::Value request_json;
+    std::string request_id;
+    if (!ParseJsonBody(request, request_json, request_id))
+    {
+        SendEnvelopeResponse(response, "", kGatewayErrorCodeParams, "请求体 JSON 解析失败或缺少 requestId 字段");
+        return;
+    }
+    std::string session_id = request_json["sessionId"].asString();
+    if (session_id.empty())
+    {
+        ERR("[F07] 请求参数错误, sessionId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : sessionId 不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效并获取用户 ID, 失败时透传错误码与错误信息
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建文件子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<file_proto::FileService_Stub> file_service_stub = CreateFileRpcStub(channel);
+    if (file_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "文件子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求
+    file_proto::GetFileListRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_session_id(session_id);
+    rpc_request.set_user_id(user_id);
+
+    // 5. 调用文件子服务的 RPC 接口, 失败时透传错误码与错误信息
+    file_proto::GetFileListResponse rpc_response;
+    if (!CallFileRpc(request_id, file_service_stub.get(), &file_proto::FileService_Stub::GetFileList,
+                     rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建文件列表结果并发送 HTTP 响应
+    Json::Value file_list(Json::arrayValue);
+    for (const file_proto::FileListItem& item : rpc_response.result().file_list())
+    {
+        Json::Value item_json;
+        item_json["fileId"] = item.file_id();
+        item_json["fileName"] = item.file_name();
+        item_json["fileSize"] = static_cast<Json::Int64>(item.file_size());
+        item_json["uploadTime"] = static_cast<Json::Int64>(item.upload_time());
+        file_list.append(item_json);
+    }
+    Json::Value result;
+    result["fileList"] = file_list;
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);
+    INFO("[F07] 获取用户文件列表接口处理完成, requestId: {}, 文件数量: {}, errorCode: {}",
+         request_id, rpc_response.result().file_list_size(), error_code);
 }
 
-void GatewayServiceImpl::HandleFileChatMap(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleFileChatMap(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[F08] 关联文件和聊天会话映射接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求体, 提取请求 ID、会话 ID、文件 ID 与聊天会话 ID
+    Json::Value request_json;
+    std::string request_id;
+    if (!ParseJsonBody(request, request_json, request_id))
+    {
+        SendEnvelopeResponse(response, "", kGatewayErrorCodeParams, "请求体 JSON 解析失败或缺少 requestId 字段");
+        return;
+    }
+    std::string session_id = request_json["sessionId"].asString();
+    std::string file_id = request_json["fileId"].asString();
+    std::string chat_session_id = request_json["chatSessionId"].asString();
+    if (session_id.empty() || file_id.empty() || chat_session_id.empty())
+    {
+        ERR("[F08] 请求参数错误, sessionId/fileId/chatSessionId 存在空值, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : sessionId、fileId 与 chatSessionId 均不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效并获取用户 ID, 失败时透传错误码与错误信息
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建文件子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<file_proto::FileService_Stub> file_service_stub = CreateFileRpcStub(channel);
+    if (file_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "文件子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求
+    file_proto::HandleFileChatSessionMapRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_session_id(session_id);
+    rpc_request.set_file_id(file_id);
+    rpc_request.set_chat_session_id(chat_session_id);
+    rpc_request.set_user_id(user_id);
+
+    // 5. 调用文件子服务的 RPC 接口, 失败时透传错误码与错误信息
+    file_proto::HandleFileChatSessionMapResponse rpc_response;
+    if (!CallFileRpc(request_id, file_service_stub.get(), &file_proto::FileService_Stub::HandleFileChatSessionMap,
+                     rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建 HTTP 响应(接口无返回数据, 不携带 result 字段)
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg);
+    INFO("[F08] 关联文件和聊天会话映射接口处理完成, requestId: {}, fileId: {}, chatSessionId: {}, errorCode: {}",
+         request_id, file_id, chat_session_id, error_code);
 }
 
-void GatewayServiceImpl::HandleFileSqliteUpload(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleFileSqliteUpload(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[F09] 上传 SQLite 文件接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求 query 参数, 请求体为 SQLite 文件二进制数据
+    std::string request_id;
+    std::string session_id;
+    if (!ParseQueryBaseParams(request, request_id, session_id))
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : requestId 与 sessionId 不能为空");
+        return;
+    }
+    std::string filename = request.get_param_value("filename");
+    if (filename.empty())
+    {
+        ERR("[F09] 请求参数错误, filename 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : filename 不能为空");
+        return;
+    }
+    if (request.body.empty())
+    {
+        ERR("[F09] 请求参数错误, SQLite 文件二进制数据为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : SQLite 文件二进制数据不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效并获取用户 ID, 失败时透传错误码与错误信息
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建文件子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<file_proto::FileService_Stub> file_service_stub = CreateFileRpcStub(channel);
+    if (file_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "文件子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求
+    file_proto::UploadSQLiteFileRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_session_id(session_id);
+    rpc_request.set_filename(filename);
+    rpc_request.set_user_id(user_id);
+
+    // 5. 调用文件子服务的 RPC 接口, SQLite 文件二进制数据通过请求 attachment 传输, 失败时透传错误码与错误信息
+    file_proto::UploadSQLiteFileResponse rpc_response;
+    if (!CallFileRpc(request_id, file_service_stub.get(), &file_proto::FileService_Stub::UploadSQLiteFile,
+                     rpc_request, rpc_response, error_code, error_msg, &request.body))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建上传结果(文件 ID)并发送 HTTP 响应
+    Json::Value result;
+    result["fileId"] = rpc_response.result().file_id();
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);
+    INFO("[F09] 上传 SQLite 文件接口处理完成, requestId: {}, 文件名: {}, 文件大小: {}, fileId: {}, errorCode: {}",
+         request_id, filename, request.body.size(), rpc_response.result().file_id(), error_code);
 }
 
 void GatewayServiceImpl::HandleDbConnect(const httplib::Request& request, httplib::Response&)
