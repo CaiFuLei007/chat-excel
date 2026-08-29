@@ -30,8 +30,11 @@ std::string SessionManager::CreateSession(const std::string& user_id)
     return session_info.session_id;
 }
 
-bool SessionManager::CheckSessionValid(const std::string& session_id)
+bool SessionManager::CheckSessionValid(const std::string& session_id, std::string& user_id)
 {
+    // 会话无效时用户 ID 输出为空
+    user_id.clear();
+
     // 先检查缓存中的会话, 缓存未命中再检查数据库中的会话, 会话不存在时会话无效
     std::optional<SessionInfo> session_info = GetSessionBySessionIdWithCache(session_id);
     if (!session_info)
@@ -56,6 +59,9 @@ bool SessionManager::CheckSessionValid(const std::string& session_id)
              session_id, session_info->user_id);
         return false;
     }
+
+    // 会话有效, 输出会话所属的用户 ID
+    user_id = session_info->user_id;
     return true;
 }
 

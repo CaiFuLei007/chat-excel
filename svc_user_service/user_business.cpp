@@ -356,10 +356,11 @@ void UserBusiness::Logout(const std::string& session_id)
     INFO("退出登录成功, session_id: {}, user_id: {}", session_id, user_id);
 }
 
-bool UserBusiness::CheckSessionValid(const std::string& session_id)
+bool UserBusiness::CheckSessionValid(const std::string& session_id, std::string& user_id)
 {
-    // 会话有效性检查由会话管理对象完成, 先检查缓存再检查数据库
-    return session_manager_->CheckSessionValid(session_id);
+    // 会话有效性检查由会话管理对象完成, 先检查缓存再检查数据库,
+    // 会话有效时输出会话所属的用户 ID, 会话无效时输出为空
+    return session_manager_->CheckSessionValid(session_id, user_id);
 }
 
 UserInfo UserBusiness::GetUserInfo(const std::string& session_id)

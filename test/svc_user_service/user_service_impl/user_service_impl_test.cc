@@ -947,6 +947,8 @@ TEST_F(UserServiceImplTest, ValidSessionSuccessAfterPasswdLogin)
     EXPECT_EQ(response.request_id(), "rid_valid_session_success");
     EXPECT_EQ(response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
     EXPECT_TRUE(response.error_msg().empty());
+    // 会话有效时响应中携带会话所属的用户 ID
+    EXPECT_FALSE(response.user_id().empty());
 }
 
 TEST_F(UserServiceImplTest, ValidSessionWithInvalidSessionReturnSessionNotFound)

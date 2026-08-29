@@ -142,6 +142,7 @@ message ValidSessionResponse {
     string request_id = 1; // 请求id
     int32 error_code = 2; // 错误码
     string error_msg = 3; // 错误信息
+    string user_id = 4; // 会话所属用户id, 会话有效时返回
 }
 
 //////////////////////// 获取用户信息 ////////////////////////

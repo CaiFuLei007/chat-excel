@@ -109,9 +109,10 @@ public:
      * @brief 检查会话是否有效, 会话存在且会话所属用户处于上线状态时会话有效,
      *        先检查缓存再检查数据库
      * @param session_id 会话 ID
+     * @param user_id 输出参数, 会话有效时为会话所属的用户 ID, 会话无效时为空
      * @return 会话有效返回 true, 会话不存在或用户未上线返回 false
      */
-    bool CheckSessionValid(const std::string& session_id);
+    bool CheckSessionValid(const std::string& session_id, std::string& user_id);
 
     /**
      * @brief 获取用户信息, 先通过会话 ID 获取用户 ID,

@@ -468,12 +468,16 @@ void UserServiceImpl::ValidSession(google::protobuf::RpcController* /*controller
         }
 
         // 调用业务逻辑层检查会话是否有效, 会话不存在或用户未上线时会话无效
-        if (!user_business_->CheckSessionValid(request->session_id()))
+        std::string user_id;
+        if (!user_business_->CheckSessionValid(request->session_id(), user_id))
         {
             ERR("会话不存在或已失效, session_id: {}, request_id: {}", request->session_id(), request->request_id());
             SetErrorResponse(response, ErrorCode::SESSION_NOT_FOUND);
             return;
         }
+
+        // 将会话所属的用户 ID 填充到响应中
+        response->set_user_id(user_id);
 
         // 成功仅设置成功错误码, 不添加成功的描述信息
         response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
