@@ -6,7 +6,7 @@ option cc_generic_services = true;
 //////////////////////// 获取工作表列表 ////////////////////////
 message GetWorksheetsRequest {
   string request_id = 1; // 请求ID
-  string file_path = 2; // 文件路径
+  string fastdfs_file_id = 2; // FastDFS文件ID
 }
 
 message GetWorksheetsResponse {
@@ -19,7 +19,7 @@ message GetWorksheetsResponse {
 //////////////////////// 解析 Excel 文件 ////////////////////////
 message ParseExcelRequest {
   string request_id = 1; // 请求ID
-  string file_path = 2; // 文件路径
+  string fastdfs_file_id = 2; // FastDFS文件ID
   repeated string worksheets = 3; // 工作表列表
 }
 

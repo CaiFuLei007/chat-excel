@@ -2,8 +2,8 @@
 #                         查找依赖
 # =================================================================
 
-# cpp_toolkit 工具库(ExcelParseBusiness 依赖 logger 封装, ServerFactory 依赖 rpc.h 封装,
-# 已声明 brpc/protobuf/spdlog 等底层传递依赖)
+# cpp_toolkit 工具库(ExcelParseBusiness 依赖 logger 与 FdfsClient 封装,
+# ServerFactory 依赖 rpc.h 封装, 已声明 brpc/protobuf/spdlog 等底层传递依赖)
 find_package(cpp_toolkit REQUIRED)
 
 # gflags 命令行参数解析库(main.cc 直接使用 gflags 符号, 显式声明不依赖传递导入)
@@ -17,6 +17,7 @@ find_package(OpenXLSX REQUIRED)
 # =================================================================
 
 # Excel 解析子服务业务逻辑层静态库 : Excel 解析器(OpenXLSX 封装) + Excel 解析业务逻辑
+# (业务逻辑层负责通过 FastDFS 文件 ID 下载文件到本地临时目录并解析)
 add_library(chat_excel_excel_parse_business STATIC
     excel_parse.cc
     excel_parse_business.cc

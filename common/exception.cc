@@ -57,6 +57,7 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::EXCEL_PARSE_FAILED), "Excel 解析失败"},
         {static_cast<int>(ErrorCode::EXCEL_PARSE_PARAMS_ERROR), "Excel 解析子服务请求参数错误"},
         {static_cast<int>(ErrorCode::EXCEL_PARSE_INTERNAL_ERROR), "Excel 解析子服务内部错误"},
+        {static_cast<int>(ErrorCode::EXCEL_PARSE_FDFS_DOWNLOAD_ERROR), "从 FastDFS 下载 Excel 文件失败"},
         {static_cast<int>(ErrorCode::NOTIFY_SEND_FAILED), "邮件发送失败"},
         {static_cast<int>(ErrorCode::NOTIFY_VERIFYCODE_EMAIL_EMPTY), "验证码邮件接收方邮箱为空"},
         {static_cast<int>(ErrorCode::NOTIFY_VERIFYCODE_CODE_EMPTY), "验证码为空"},

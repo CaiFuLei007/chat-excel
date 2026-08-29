@@ -218,7 +218,7 @@ message GetSQLiteFileRequest {
 }
 
 message GetSQLiteFileResult {
-  string fdfsFileId = 1; // FastDFS文件ID
+  string fdfs_file_id = 1; // FastDFS文件ID
 }
 
 message GetSQLiteFileResponse {
@@ -236,7 +236,7 @@ message GetWorksheetDBTablesRequest {
 }
 
 message GetWorksheetDBTablesResult {
-  repeated string worksheet_dbTables = 1; // worksheet数据库表名列表
+  repeated string worksheet_db_tables = 1; // worksheet数据库表名列表
 }
 
 message GetWorksheetDBTablesResponse {

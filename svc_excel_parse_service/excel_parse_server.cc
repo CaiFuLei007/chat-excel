@@ -9,6 +9,9 @@
 #include <cpp-toolkit/rpc.h>
 #include "excel_parse_business.h"
 #include "excel_parse_service_impl.h"
+// FastDFS 客户端头文件必须最后导入 : 其依赖的 fastcommon 头文件会向全局作用域
+// 定义 byte 等宏, 先行导入会破坏 fmt/boost 等后续头文件的解析
+#include <cpp-toolkit/fdfs.h>
 
 namespace chat_excel
 {
@@ -97,6 +100,13 @@ ExcelParseServerBuilder& ExcelParseServerBuilder::SetBrpcSettings(
     return *this;
 }
 
+ExcelParseServerBuilder& ExcelParseServerBuilder::SetFdfsSettings(
+    const FdfsClientSettings& fdfs_settings)
+{
+    fdfs_settings_ = fdfs_settings;
+    return *this;
+}
+
 ExcelParseServerBuilder& ExcelParseServerBuilder::SetRegistryTtl(int registry_ttl)
 {
     registry_ttl_ = registry_ttl;
@@ -105,18 +115,31 @@ ExcelParseServerBuilder& ExcelParseServerBuilder::SetRegistryTtl(int registry_tt
 
 std::shared_ptr<ExcelParseServer> ExcelParseServerBuilder::Build()
 {
-    // 1. 创建 Excel 解析业务逻辑对象(内部构建 Excel 解析器实例),
+    // 1. 初始化 FastDFS 客户端(Excel 解析业务层下载文件依赖),
+    //    其余配置项(连接/网络超时等)使用 FdfsSettings 默认值
+    cpp_toolkit::FdfsSettings fdfs_settings;
+    fdfs_settings.tracker_servers_ = fdfs_settings_.tracker_servers;
+    if (!cpp_toolkit::FdfsClient::Init(fdfs_settings))
+    {
+        ERR("FastDFS 客户端初始化失败, tracker 服务器个数: {}",
+            fdfs_settings_.tracker_servers.size());
+        return nullptr;
+    }
+    INFO("FastDFS 客户端初始化完成, tracker 服务器个数: {}",
+         fdfs_settings_.tracker_servers.size());
+
+    // 2. 创建 Excel 解析业务逻辑对象(内部构建 Excel 解析器实例),
     //    业务对象由 RPC 接口实现对象间接持有保活
     std::shared_ptr<ExcelParseBusiness> excel_parse_business =
         std::make_shared<ExcelParseBusiness>();
     INFO("Excel 解析业务逻辑对象构建完成");
 
-    // 2. 创建 RPC 接口实现对象(注入业务逻辑对象, 间接保活整个业务对象图)
+    // 3. 创建 RPC 接口实现对象(注入业务逻辑对象, 间接保活整个业务对象图)
     //    ServerFactory 使用 SERVER_DOESNT_OWN_SERVICE, 业务对象必须比 server 活得久
     excel_parse_service_impl_ = std::make_shared<ExcelParseServiceImpl>(excel_parse_business);
     INFO("RPC 接口实现对象构建完成");
 
-    // 3. 创建并启动 brpc 服务器(ServerFactory 内部 AddService + Start, 立即启动)
+    // 4. 创建并启动 brpc 服务器(ServerFactory 内部 AddService + Start, 立即启动)
     server_ = cpp_toolkit::ServerFactory::CreateServer(brpc_settings_.listen_port,
                                                        excel_parse_service_impl_.get());
     if (server_ == nullptr)
@@ -126,7 +149,7 @@ std::shared_ptr<ExcelParseServer> ExcelParseServerBuilder::Build()
     }
     INFO("brpc 服务器已启动, 监听端口: {}", brpc_settings_.listen_port);
 
-    // 4. 服务注册(SvcProvider + Registry, KeepAlive 自动续期; 须在 server 启动后注册)
+    // 5. 服务注册(SvcProvider + Registry, KeepAlive 自动续期; 须在 server 启动后注册)
     svc_provider_ = std::make_shared<cpp_toolkit::SvcProvider>(
         etcd_center_addr_, brpc_settings_.service_name, brpc_settings_.service_addr);
     if (!svc_provider_->Registry(registry_ttl_))
@@ -137,7 +160,7 @@ std::shared_ptr<ExcelParseServer> ExcelParseServerBuilder::Build()
     INFO("服务注册完成: {} -> {}, TTL: {}s",
          brpc_settings_.service_name, brpc_settings_.service_addr, registry_ttl_);
 
-    // 5. 创建 ExcelParseServer 实例(持有三个核心对象, 保证 keepalive/impl 生命周期)
+    // 6. 创建 ExcelParseServer 实例(持有三个核心对象, 保证 keepalive/impl 生命周期)
     std::shared_ptr<ExcelParseServer> excel_parse_server = std::make_shared<ExcelParseServer>(
         excel_parse_service_impl_, server_, svc_provider_);
     INFO("Excel 解析子服务服务器构建完成");

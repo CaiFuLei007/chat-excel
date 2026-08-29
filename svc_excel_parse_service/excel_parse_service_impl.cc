@@ -49,18 +49,20 @@ void ExcelParseServiceImpl::GetWorksheets(google::protobuf::RpcController* /*con
 
     try
     {
-        // 参数解析与校验, file_path 为空属于请求参数错误
-        if (request->file_path().empty())
+        // 参数解析与校验, fastdfs_file_id 为空属于请求参数错误
+        if (request->fastdfs_file_id().empty())
         {
-            ERR("GetWorksheets 接口请求参数错误, file_path 为空, request_id: {}",
+            ERR("GetWorksheets 接口请求参数错误, fastdfs_file_id 为空, request_id: {}",
                 request->request_id());
             SetErrorResponse(response, ErrorCode::EXCEL_PARSE_PARAMS_ERROR);
             return;
         }
 
         // 调用业务逻辑层获取所有 worksheet 名称列表
+        // (业务层负责从 FastDFS 下载文件到本地临时目录并解析, 解析完成后清理临时目录)
         std::vector<std::string> worksheet_names =
-            excel_parse_business_->GetWorksheetNames(request->file_path());
+            excel_parse_business_->GetWorksheetNames(request->request_id(),
+                                                     request->fastdfs_file_id());
         for (const std::string& worksheet_name : worksheet_names)
         {
             response->add_worksheets(worksheet_name);
@@ -72,15 +74,15 @@ void ExcelParseServiceImpl::GetWorksheets(google::protobuf::RpcController* /*con
     catch (const ChatExcelException& e)
     {
         // 业务处理异常, 按照业务处理失败的逻辑进行处理
-        ERR("GetWorksheets 接口业务处理异常, file_path: {} , request_id: {} , 错误信息: {}",
-            request->file_path(), request->request_id(), e.what());
+        ERR("GetWorksheets 接口业务处理异常, fastdfs_file_id: {} , request_id: {} , 错误信息: {}",
+            request->fastdfs_file_id(), request->request_id(), e.what());
         SetErrorResponse(response, e.error_code());
     }
     catch (const std::exception& e)
     {
         // 非预期异常, 统一按照业务处理失败的逻辑进行处理
-        ERR("GetWorksheets 接口非预期异常, file_path: {} , request_id: {} , 错误信息: {}",
-            request->file_path(), request->request_id(), e.what());
+        ERR("GetWorksheets 接口非预期异常, fastdfs_file_id: {} , request_id: {} , 错误信息: {}",
+            request->fastdfs_file_id(), request->request_id(), e.what());
         SetErrorResponse(response, ErrorCode::EXCEL_PARSE_INTERNAL_ERROR);
     }
 }
@@ -98,10 +100,10 @@ void ExcelParseServiceImpl::ParseExcel(google::protobuf::RpcController* /*contro
 
     try
     {
-        // 参数解析与校验, file_path 为空属于请求参数错误
-        if (request->file_path().empty())
+        // 参数解析与校验, fastdfs_file_id 为空属于请求参数错误
+        if (request->fastdfs_file_id().empty())
         {
-            ERR("ParseExcel 接口请求参数错误, file_path 为空, request_id: {}",
+            ERR("ParseExcel 接口请求参数错误, fastdfs_file_id 为空, request_id: {}",
                 request->request_id());
             SetErrorResponse(response, ErrorCode::EXCEL_PARSE_PARAMS_ERROR);
             return;
@@ -112,14 +114,17 @@ void ExcelParseServiceImpl::ParseExcel(google::protobuf::RpcController* /*contro
                                             request->worksheets().end());
         if (worksheets.empty())
         {
-            worksheets = excel_parse_business_->GetWorksheetNames(request->file_path());
+            worksheets = excel_parse_business_->GetWorksheetNames(request->request_id(),
+                                                                  request->fastdfs_file_id());
             INFO("ParseExcel 接口未指定 worksheet, 解析全部 worksheet, 个数: {} , request_id: {}",
                  worksheets.size(), request->request_id());
         }
 
         // 调用业务逻辑层解析各 worksheet 的表结构(列信息)与表数据
+        // (业务层负责从 FastDFS 下载文件到本地临时目录并解析, 解析完成后清理临时目录)
         std::vector<proto::WorksheetData> proto_worksheets =
-            excel_parse_business_->ParseWorksheets(request->file_path(), worksheets);
+            excel_parse_business_->ParseWorksheets(request->request_id(),
+                                                   request->fastdfs_file_id(), worksheets);
         for (proto::WorksheetData& proto_worksheet : proto_worksheets)
         {
             *response->add_worksheets() = std::move(proto_worksheet);
@@ -131,15 +136,15 @@ void ExcelParseServiceImpl::ParseExcel(google::protobuf::RpcController* /*contro
     catch (const ChatExcelException& e)
     {
         // 业务处理异常, 按照业务处理失败的逻辑进行处理
-        ERR("ParseExcel 接口业务处理异常, file_path: {} , request_id: {} , 错误信息: {}",
-            request->file_path(), request->request_id(), e.what());
+        ERR("ParseExcel 接口业务处理异常, fastdfs_file_id: {} , request_id: {} , 错误信息: {}",
+            request->fastdfs_file_id(), request->request_id(), e.what());
         SetErrorResponse(response, e.error_code());
     }
     catch (const std::exception& e)
     {
         // 非预期异常, 统一按照业务处理失败的逻辑进行处理
-        ERR("ParseExcel 接口非预期异常, file_path: {} , request_id: {} , 错误信息: {}",
-            request->file_path(), request->request_id(), e.what());
+        ERR("ParseExcel 接口非预期异常, fastdfs_file_id: {} , request_id: {} , 错误信息: {}",
+            request->fastdfs_file_id(), request->request_id(), e.what());
         SetErrorResponse(response, ErrorCode::EXCEL_PARSE_INTERNAL_ERROR);
     }
 }

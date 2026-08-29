@@ -153,6 +153,9 @@ enum class ErrorCode : int
     // Excel 解析子服务内部错误
     EXCEL_PARSE_INTERNAL_ERROR = 404,
 
+    // 从 FastDFS 下载 Excel 文件失败
+    EXCEL_PARSE_FDFS_DOWNLOAD_ERROR = 405,
+
     // ==================== 通知子服务错误码范围 500 - 599 ====================
     // 邮件发送失败
     NOTIFY_SEND_FAILED = 500,

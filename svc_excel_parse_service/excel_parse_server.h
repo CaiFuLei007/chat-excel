@@ -3,6 +3,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <vector>
 #include <brpc/server.h>
 #include <cpp-toolkit/etcd.h>
 #include <cpp-toolkit/rpc.h>
@@ -24,6 +25,15 @@ struct BrpcSettings
 
     // 子服务注册地址(客户端可访问的 host:port)
     std::string service_addr;
+};
+
+// FastDFS 客户端配置信息 : tracker 服务器地址列表
+// 注 : 不直接使用 cpp_toolkit::FdfsSettings, 因其头文件依赖的 fastcommon
+// 会向全局作用域定义 byte 等宏, 在头文件中导入会破坏其他头文件的解析
+struct FdfsClientSettings
+{
+    // FastDFS tracker 服务器地址列表, eg : 127.0.0.1:22122
+    std::vector<std::string> tracker_servers;
 };
 
 /**
@@ -87,10 +97,12 @@ private:
 /**
  * @brief Excel 解析子服务构建器类, 负责分步配置并构建 ExcelParseServer 对象
  *        各 Set 方法返回构建器自身引用, 支持链式调用, 最后调用 Build 获取 ExcelParseServer 对象;
- *        Build 构建流程 : Excel 解析业务逻辑 -> RPC 接口实现 -> brpc 服务器 -> 服务注册 -> ExcelParseServer
+ *        Build 构建流程 : FastDFS 客户端初始化 -> Excel 解析业务逻辑 -> RPC 接口实现 ->
+ *        brpc 服务器 -> 服务注册 -> ExcelParseServer
  *        使用方式 : ExcelParseServerBuilder()
  *                       .SetEtcdAddress(...)
  *                       .SetBrpcSettings(...)
+ *                       .SetFdfsSettings(...)
  *                       .SetRegistryTtl(...)
  *                       .Build()
  */
@@ -122,6 +134,14 @@ public:
     ExcelParseServerBuilder& SetBrpcSettings(const BrpcSettings& brpc_settings);
 
     /**
+     * @brief 设置 FastDFS 客户端配置信息(tracker 服务器地址列表),
+     *        Build 时在内部完成 FdfsClient 的初始化
+     * @param fdfs_settings FastDFS 客户端配置信息
+     * @return 构建器自身引用, 支持链式调用
+     */
+    ExcelParseServerBuilder& SetFdfsSettings(const FdfsClientSettings& fdfs_settings);
+
+    /**
      * @brief 设置服务注册 TTL(存活时间), KeepAlive 自动续期
      * @param registry_ttl TTL 秒数
      * @return 构建器自身引用, 支持链式调用
@@ -130,7 +150,7 @@ public:
 
     /**
      * @brief 构建 Excel 解析子服务服务器, 执行完整构建流程并返回 ExcelParseServer 对象;
-     *        构建失败(服务器创建失败或服务注册失败)时返回 nullptr
+     *        构建失败(FastDFS 客户端初始化失败/服务器创建失败或服务注册失败)时返回 nullptr
      * @return 构建完成的 ExcelParseServer 对象, 失败时返回 nullptr
      */
     std::shared_ptr<ExcelParseServer> Build();
@@ -141,6 +161,9 @@ private:
 
     // brpc 子服务服务器配置信息(监听端口/子服务名称/子服务地址)
     BrpcSettings brpc_settings_;
+
+    // FastDFS 客户端配置信息(tracker 服务器地址列表)
+    FdfsClientSettings fdfs_settings_;
 
     // 服务注册 TTL(秒)
     int registry_ttl_ = 10;

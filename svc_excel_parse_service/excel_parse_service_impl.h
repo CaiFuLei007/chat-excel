@@ -28,9 +28,10 @@ public:
     ~ExcelParseServiceImpl() override = default;
 
     /**
-     * @brief 获取 Excel 文件包含的所有 worksheet 工作表名称列表
+     * @brief 获取 Excel 文件包含的所有 worksheet 工作表名称列表,
+     *        Excel 文件由业务层通过 FastDFS 文件 ID 下载到本地临时目录后解析
      * @param controller RPC 控制器
-     * @param request RPC 请求, 携带请求 ID 与 Excel 文件路径
+     * @param request RPC 请求, 携带请求 ID 与 FastDFS 文件 ID
      * @param response RPC 响应, 携带错误码、错误信息与工作表名称列表
      * @param done RPC 结束回调, 由 brpc::ClosureGuard 管理生命周期
      */
@@ -41,9 +42,10 @@ public:
 
     /**
      * @brief 解析 Excel 文件中指定的 worksheet 集合, 返回各表的表结构(列信息)与表数据;
-     *        请求中 worksheets 列表为空时视为解析文件中的全部 worksheet
+     *        请求中 worksheets 列表为空时视为解析文件中的全部 worksheet,
+     *        Excel 文件由业务层通过 FastDFS 文件 ID 下载到本地临时目录后解析
      * @param controller RPC 控制器
-     * @param request RPC 请求, 携带请求 ID、Excel 文件路径与待解析的工作表名称列表
+     * @param request RPC 请求, 携带请求 ID、FastDFS 文件 ID 与待解析的工作表名称列表
      * @param response RPC 响应, 携带错误码、错误信息与各工作表的结构化数据
      * @param done RPC 结束回调, 由 brpc::ClosureGuard 管理生命周期
      */

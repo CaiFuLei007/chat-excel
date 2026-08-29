@@ -1,5 +1,6 @@
 #include <memory>
 #include <string>
+#include <vector>
 #include <gflags/gflags.h>
 #include <spdlog/common.h>
 #include <cpp-toolkit/logger.h>
@@ -25,6 +26,10 @@ DEFINE_string(service_addr, "127.0.0.1:8083", "Excel 解析子服务注册地址
 
 // 服务注册 TTL(秒)
 DEFINE_int32(registry_ttl, 10, "服务注册 TTL(秒)");
+
+// FastDFS tracker 服务器地址列表(逗号分隔)
+DEFINE_string(fdfs_tracker_servers, "127.0.0.1:22122",
+              "FastDFS tracker 服务器地址列表, 逗号分隔");
 
 namespace
 {
@@ -66,6 +71,37 @@ spdlog::level::level_enum ParseLogLevel(const std::string& log_level)
     }
 }
 
+/**
+ * @brief 将逗号分隔的 tracker 服务器地址字符串拆分为地址列表
+ * @param tracker_servers 逗号分隔的 tracker 服务器地址字符串
+ * @return tracker 服务器地址列表
+ */
+std::vector<std::string> SplitTrackerServers(const std::string& tracker_servers)
+{
+    std::vector<std::string> server_list;
+    std::string::size_type start_pos = 0;
+    while (start_pos <= tracker_servers.size())
+    {
+        const std::string::size_type comma_pos = tracker_servers.find(',', start_pos);
+        if (comma_pos == std::string::npos)
+        {
+            const std::string server = tracker_servers.substr(start_pos);
+            if (!server.empty())
+            {
+                server_list.push_back(server);
+            }
+            break;
+        }
+        const std::string server = tracker_servers.substr(start_pos, comma_pos - start_pos);
+        if (!server.empty())
+        {
+            server_list.push_back(server);
+        }
+        start_pos = comma_pos + 1;
+    }
+    return server_list;
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -92,11 +128,19 @@ int main(int argc, char* argv[])
     INFO("brpc 服务器配置组装完成, 监听端口: {} , 服务名称: {} , 服务地址: {}",
          FLAGS_listen_port, FLAGS_service_name, FLAGS_service_addr);
 
-    // 4. 链式构建 Excel 解析子服务服务器
+    // 4. 组装 FastDFS 客户端配置信息(tracker 服务器地址列表),
+    //    供服务器构建器在内部完成 FdfsClient 初始化
+    chat_excel::excel_parse_service::FdfsClientSettings fdfs_settings;
+    fdfs_settings.tracker_servers = SplitTrackerServers(FLAGS_fdfs_tracker_servers);
+    INFO("FastDFS 客户端配置组装完成, tracker 服务器个数: {}",
+         fdfs_settings.tracker_servers.size());
+
+    // 5. 链式构建 Excel 解析子服务服务器
     std::shared_ptr<chat_excel::excel_parse_service::ExcelParseServer> excel_parse_server =
         chat_excel::excel_parse_service::ExcelParseServerBuilder()
             .SetEtcdAddress(FLAGS_etcd_address)
             .SetBrpcSettings(brpc_settings)
+            .SetFdfsSettings(fdfs_settings)
             .SetRegistryTtl(FLAGS_registry_ttl)
             .Build();
     if (excel_parse_server == nullptr)
@@ -105,7 +149,7 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    // 5. 启动服务器(阻塞), brpc 的 RunUntilAskedToQuit 内部处理 SIGINT/SIGTERM 信号,
+    // 6. 启动服务器(阻塞), brpc 的 RunUntilAskedToQuit 内部处理 SIGINT/SIGTERM 信号,
     //    收到信号后 RunUntilAskedToQuit 返回, 服务器自动 Stop+Join
     excel_parse_server->Start();
 

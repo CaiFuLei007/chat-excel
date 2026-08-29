@@ -16,7 +16,9 @@ namespace proto = ::chat_excel_proto::excel_parse_service;
 
 /**
  * @brief Excel 解析子服务业务逻辑类, 是对 Excel 解析器的封装,
- *        负责组织解析流程并构建指定 worksheet 的表头信息/列类型信息/表数据,
+ *        负责组织解析流程并构建指定 worksheet 的表头信息/列类型信息/表数据;
+ *        通过 FastDFS 文件 ID 从 FastDFS 下载 Excel 文件到本地临时目录
+ *        /tmp/excel_files/{request_id}/ 进行解析, 解析完成后清理临时目录,
  *        将内部解析结果转换为 RPC 接口需要的 proto 结构化数据
  */
 class ExcelParseBusiness
@@ -35,23 +37,30 @@ public:
     ~ExcelParseBusiness() = default;
 
     /**
-     * @brief 解析 Excel 文件所有 worksheet 的名称
-     * @param file_path Excel 文件路径
+     * @brief 通过 FastDFS 文件 ID 下载 Excel 文件到本地临时目录,
+     *        并解析所有 worksheet 的名称
+     * @param request_id 请求 ID, 用于临时目录隔离与日志链路追踪
+     * @param fastdfs_file_id FastDFS 文件 ID
      * @return 所有 worksheet 名称列表
-     * @throws ChatExcelException 文件打开失败时抛出对应异常
+     * @throws ChatExcelException 临时目录创建失败/文件下载失败/文件打开失败时抛出对应异常
      */
-    std::vector<std::string> GetWorksheetNames(const std::string& file_path);
+    std::vector<std::string> GetWorksheetNames(const std::string& request_id,
+                                               const std::string& fastdfs_file_id);
 
     /**
-     * @brief 解析指定的 worksheet 集合, 每张表返回表头信息/列类型信息/表数据,
+     * @brief 通过 FastDFS 文件 ID 下载 Excel 文件到本地临时目录,
+     *        并解析指定的 worksheet 集合, 每张表返回表头信息/列类型信息/表数据,
      *        结果为 proto 结构化数据, 可直接填充到 ParseExcelResponse 中
-     * @param file_path Excel 文件路径
+     * @param request_id 请求 ID, 用于临时目录隔离与日志链路追踪
+     * @param fastdfs_file_id FastDFS 文件 ID
      * @param worksheets 待解析的 worksheet 名称列表
      * @return 各 worksheet 的结构化解析结果(与请求中名称顺序一致)
-     * @throws ChatExcelException 文件打开失败/worksheet 不存在/解析异常时抛出对应异常
+     * @throws ChatExcelException 临时目录创建失败/文件下载失败/文件打开失败/
+     *                            worksheet 不存在/解析异常时抛出对应异常
      */
-    std::vector<proto::WorksheetData> ParseWorksheets(const std::string& file_path,
-                                                      const std::vector<std::string>& worksheets);
+    std::vector<proto::WorksheetData> ParseWorksheets(
+        const std::string& request_id, const std::string& fastdfs_file_id,
+        const std::vector<std::string>& worksheets);
 
 private:
     /**
