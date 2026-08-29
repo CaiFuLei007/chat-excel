@@ -439,6 +439,38 @@ void FileBusiness::HandleFileChatSessionMap(const std::string& request_id, const
          request_id, user_id, file_id, chat_session_id);
 }
 
+std::vector<std::string> FileBusiness::GetWorksheetDBTables(const std::string& request_id,
+                                                            const std::string& user_id,
+                                                            const std::string& file_id)
+{
+    // 获取文件信息并校验文件属主
+    const FileInfo file_info = GetFileInfoWithOwnerCheck(request_id, user_id, file_id);
+
+    // 读策略(Cache-Aside): 先从缓存中读取 WorkSheet 信息
+    std::vector<WorkSheetInfo> worksheet_list =
+        worksheet_data_->GetWorkSheetListByFileIdFromCache(file_info.file_id);
+    if (worksheet_list.empty())
+    {
+        // 缓存未命中, 到 MySQL 中读取 WorkSheet 信息并回填缓存
+        worksheet_list = worksheet_data_->GetWorkSheetListByFileId(file_info.file_id);
+        if (!worksheet_list.empty())
+        {
+            worksheet_data_->SaveWorkSheetToCache(file_info.file_id, worksheet_list);
+        }
+    }
+
+    // 提取每个 WorkSheet 数据存储的数据库表名称
+    std::vector<std::string> table_names;
+    table_names.reserve(worksheet_list.size());
+    for (const WorkSheetInfo& worksheet_info : worksheet_list)
+    {
+        table_names.push_back(worksheet_info.table_name);
+    }
+    INFO("获取 WorkSheet 数据库表名列表成功, request_id: {}, file_id: {}, 表名个数: {}",
+         request_id, file_info.file_id, table_names.size());
+    return table_names;
+}
+
 FileInfo FileBusiness::GetFileInfoWithOwnerCheck(const std::string& request_id,
                                                  const std::string& user_id,
                                                  const std::string& file_id)

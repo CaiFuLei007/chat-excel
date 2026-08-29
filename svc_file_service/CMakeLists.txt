@@ -31,3 +31,29 @@ target_link_libraries(chat_excel_file_business PUBLIC
     chat_excel_proto
     cpp_toolkit::cpp_toolkit
 )
+
+# =================================================================
+#                         生成静态库(RPC 接口实现层)
+# =================================================================
+
+# 文件子服务 RPC 接口实现层静态库 : protoc 生成服务类的 RPC 接口实现代码
+add_library(chat_excel_file_service STATIC
+    file_service_impl.cpp
+)
+
+# 头文件搜索路径 :
+#   项目根目录 : 支持下游以 #include "svc_file_service/file_service_impl.h" 方式导入
+target_include_directories(chat_excel_file_service PUBLIC
+    ${PROJECT_SOURCE_DIR}
+)
+
+# 链接依赖 :
+#   chat_excel_file_business : 文件业务逻辑层
+#   chat_excel_proto         : protoc 生成的 RPC 接口代码(file_service.pb.h/cc),
+#                              传递链接 protobuf 运行时库与头文件搜索路径
+#   cpp_toolkit              : brpc::ClosureGuard / brpc::Controller attachment 操作
+target_link_libraries(chat_excel_file_service PUBLIC
+    chat_excel_file_business
+    chat_excel_proto
+    cpp_toolkit::cpp_toolkit
+)

@@ -16,6 +16,17 @@ TEST(ErrorMessageTest, ReturnDescriptionForDefinedCode)
     EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::USER_EMAIL_EXISTS), "用户邮箱已存在");
     EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::USER_SERVICE_PARAMS_ERROR), "用户子服务请求参数错误");
     EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::USER_SERVICE_INTERNAL_ERROR), "用户子服务内部错误");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::FILE_SERVICE_SESSION_ID_EMPTY), "文件子服务请求参数错误 : 会话 ID 为空");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::FILE_SERVICE_USER_ID_EMPTY), "文件子服务请求参数错误 : 用户 ID 为空");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::FILE_SERVICE_FILE_ID_EMPTY), "文件子服务请求参数错误 : 文件 ID 为空");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::FILE_SERVICE_FILE_INFO_EMPTY), "文件子服务请求参数错误 : 文件信息缺失");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::FILE_SERVICE_FILE_NAME_EMPTY), "文件子服务请求参数错误 : 文件名为空");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::FILE_SERVICE_FILE_EXT_EMPTY), "文件子服务请求参数错误 : 文件扩展名为空");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::FILE_SERVICE_FILE_CONTENT_EMPTY), "文件子服务请求参数错误 : 上传的文件数据为空");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::FILE_SERVICE_CHAT_SESSION_ID_EMPTY), "文件子服务请求参数错误 : 聊天会话 ID 为空");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::FILE_SERVICE_PAGE_NUMBER_ERROR), "文件子服务请求参数错误 : 预览页码无效(页码从 1 开始)");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::FILE_SERVICE_PAGE_SIZE_ERROR), "文件子服务请求参数错误 : 预览每页行数无效(每页行数从 1 开始)");
+    EXPECT_EQ(chat_excel::ErrorMessage(ErrorCode::FILE_SERVICE_INTERNAL_ERROR), "文件子服务内部错误");
 }
 
 // 异常情况: 未定义的错误码返回 "未知错误"

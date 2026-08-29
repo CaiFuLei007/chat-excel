@@ -154,6 +154,19 @@ public:
     void HandleFileChatSessionMap(const std::string& request_id, const std::string& user_id,
                                   const std::string& file_id, const std::string& chat_session_id);
 
+    /**
+     * @brief 获取文件对应的所有 WorkSheet 数据库表名列表, 读策略(Cache-Aside):
+     *        先查 WorkSheet 缓存, 未命中时查数据库并回填缓存;
+     *        文件存在但没有 WorkSheet 信息时(如 SQLite 文件)返回空列表
+     * @param request_id 请求 ID, 用于日志链路追踪
+     * @param user_id 用户 ID
+     * @param file_id 文件 ID
+     * @return WorkSheet 对应的数据库表名列表
+     */
+    std::vector<std::string> GetWorksheetDBTables(const std::string& request_id,
+                                                  const std::string& user_id,
+                                                  const std::string& file_id);
+
 private:
     /**
      * @brief 获取文件信息并校验文件属主, 读策略(Cache-Aside): 先查缓存,

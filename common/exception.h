@@ -137,6 +137,39 @@ enum class ErrorCode : int
     // 本地文件读写操作失败
     FILE_LOCAL_FILE_ERROR = 222,
 
+    // 文件子服务请求参数错误 : 会话 ID 为空
+    FILE_SERVICE_SESSION_ID_EMPTY = 223,
+
+    // 文件子服务请求参数错误 : 用户 ID 为空
+    FILE_SERVICE_USER_ID_EMPTY = 224,
+
+    // 文件子服务请求参数错误 : 文件 ID 为空
+    FILE_SERVICE_FILE_ID_EMPTY = 225,
+
+    // 文件子服务请求参数错误 : 文件信息缺失
+    FILE_SERVICE_FILE_INFO_EMPTY = 226,
+
+    // 文件子服务请求参数错误 : 文件名为空
+    FILE_SERVICE_FILE_NAME_EMPTY = 227,
+
+    // 文件子服务请求参数错误 : 文件扩展名为空
+    FILE_SERVICE_FILE_EXT_EMPTY = 228,
+
+    // 文件子服务请求参数错误 : 上传的文件数据为空
+    FILE_SERVICE_FILE_CONTENT_EMPTY = 229,
+
+    // 文件子服务请求参数错误 : 聊天会话 ID 为空
+    FILE_SERVICE_CHAT_SESSION_ID_EMPTY = 230,
+
+    // 文件子服务请求参数错误 : 预览页码无效(页码从 1 开始)
+    FILE_SERVICE_PAGE_NUMBER_ERROR = 231,
+
+    // 文件子服务请求参数错误 : 预览每页行数无效(每页行数从 1 开始)
+    FILE_SERVICE_PAGE_SIZE_ERROR = 232,
+
+    // 文件子服务内部错误
+    FILE_SERVICE_INTERNAL_ERROR = 233,
+
     // ==================== Excel 解析子服务错误码范围 400 - 499 ====================
     // Excel 文件打开失败(文件不存在或格式非法)
     EXCEL_PARSE_FILE_OPEN_FAILED = 400,

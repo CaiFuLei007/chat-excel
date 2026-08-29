@@ -63,6 +63,9 @@ add_subdirectory(test/svc_file_service/worksheet_data)
 # 文件子服务业务逻辑层单元测试
 add_subdirectory(test/svc_file_service/file_business)
 
+# 文件子服务 RPC 接口实现层单元测试
+add_subdirectory(test/svc_file_service/file_service_impl)
+
 # 用户子服务 RPC 接口实现层单元测试
 add_subdirectory(test/svc_user_service/user_service_impl)
 

@@ -215,6 +215,7 @@ message GetSQLiteFileRequest {
   string request_id = 1; // 请求ID
   string session_id = 2; // 会话ID
   string file_id = 3; // 文件ID
+  string user_id = 4; // 用户ID
 }
 
 message GetSQLiteFileResult {
@@ -225,7 +226,7 @@ message GetSQLiteFileResponse {
   string request_id = 1; // 请求ID
   int32 error_code = 2; // 错误码
   string error_msg = 3; // 错误信息
-  GetSQLiteFileResult result = 4; // 文件路径结果
+  GetSQLiteFileResult result = 4; // FastDFS文件ID结果
 }
 
 /////////////////////// 获取Worksheet数据库表名列表 ///////////////////////
@@ -233,6 +234,7 @@ message GetWorksheetDBTablesRequest {
   string request_id = 1; // 请求ID
   string session_id = 2; // 会话ID
   string file_id = 3; // 文件ID
+  string user_id = 4; // 用户ID
 }
 
 message GetWorksheetDBTablesResult {
