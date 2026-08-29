@@ -61,7 +61,8 @@ public:
                          const std::string& file_id);
 
     /**
-     * @brief 删除文件信息, 校验文件属主后删除数据库与缓存中的文件信息
+     * @brief 删除文件信息, 校验文件属主后删除数据库与缓存中的文件信息,
+     *        以及 Excel 对应的 WorkSheet 数据(数据库与缓存)
      * @param request_id 请求 ID, 用于日志链路追踪
      * @param user_id 用户 ID
      * @param file_id 文件 ID
@@ -71,8 +72,8 @@ public:
 
     /**
      * @brief 上传 Excel 文件数据, 完整流程 : 上传文件到 FastDFS 并更新数据库 ->
-     *        本地暂存文件 -> RPC 调用 Excel 解析子服务获取工作表名称并解析 ->
-     *        生成数据库表名称保存 WorkSheet 信息 -> 删除本地暂存文件
+     *        RPC 调用 Excel 解析子服务(传递 FastDFS 文件 ID, 由解析子服务自行下载文件)
+     *        获取工作表名称并解析 -> 生成数据库表名称保存 WorkSheet 信息
      * @param request_id 请求 ID, 用于日志链路追踪
      * @param user_id 用户 ID
      * @param file_id 文件 ID
@@ -133,12 +134,12 @@ public:
                               const std::string& file_id, const std::string& file_content);
 
     /**
-     * @brief 获取 SQLite 文件, 校验文件属主后从 FastDFS 下载 sqlite 文件保存到本地,
-     *        连接 sqlite 数据库由数据库子服务完成(暂未实现)
+     * @brief 获取 SQLite 文件, 校验文件属主后返回文件对应的 FastDFS 文件 ID,
+     *        sqlite 文件由数据库子服务负责下载保存到其本地目录并进行解析(暂未实现)
      * @param request_id 请求 ID, 用于日志链路追踪
      * @param user_id 用户 ID
      * @param file_id 文件 ID
-     * @return 下载到本地的 sqlite 文件路径
+     * @return FastDFS 中的文件 ID
      */
     std::string GetSQLiteFile(const std::string& request_id, const std::string& user_id,
                               const std::string& file_id);

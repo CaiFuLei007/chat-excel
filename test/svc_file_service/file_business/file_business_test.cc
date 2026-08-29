@@ -1,9 +1,6 @@
 #include "svc_file_service/file_business.h"
 
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -59,9 +56,6 @@ constexpr const char* kRequestId = "rid_for_fb_test";
 // 文件缓存与 WorkSheet 缓存 hash 类型的 key(与数据层实现保持一致)
 constexpr const char* kFileCacheKey = "file_data";
 constexpr const char* kWorkSheetCacheKey = "worksheet_data";
-
-// 本地暂存文件根目录(与 FileBusiness 实现中的常量保持一致)
-constexpr const char* kLocalExcelFilesDir = "build/excel_files";
 
 /**
  * @brief 获取必填环境变量的值
@@ -133,8 +127,9 @@ void InitFdfsClient()
 }
 
 /**
- * @brief mock Excel 解析子服务 : 校验请求的本地文件存在, 返回固定的工作表
- *        列表与解析结果, 用于验证 FileBusiness 上传文件数据的完整流程
+ * @brief mock Excel 解析子服务 : 校验请求的 FastDFS 文件 ID 对应的文件真实存在
+ *        (可从 FastDFS 下载), 返回固定的工作表列表与解析结果,
+ *        用于验证 FileBusiness 上传文件数据的完整流程
  */
 class MockExcelParserServiceImpl : public proto::ExcelParserService
 {
@@ -147,11 +142,13 @@ public:
         brpc::ClosureGuard closure_guard(done);
         response->set_request_id(request->request_id());
 
-        // 校验业务层已将文件保存到本地(文件不存在视为打开失败)
-        if (!std::filesystem::exists(request->file_path()))
+        // 校验业务层传递的 FastDFS 文件 ID 非空且文件真实存在(下载失败视为文件不存在)
+        std::string downloaded_content;
+        if (request->fastdfs_file_id().empty() ||
+            !cpp_toolkit::FdfsClient::DownloadToBuffer(request->fastdfs_file_id(), downloaded_content))
         {
             response->set_error_code(static_cast<int>(ErrorCode::EXCEL_PARSE_FILE_OPEN_FAILED));
-            response->set_error_msg("mock: 本地文件不存在");
+            response->set_error_msg("mock: FastDFS 文件不存在");
             return;
         }
         response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
@@ -167,11 +164,13 @@ public:
         brpc::ClosureGuard closure_guard(done);
         response->set_request_id(request->request_id());
 
-        // 校验业务层已将文件保存到本地(文件不存在视为打开失败)
-        if (!std::filesystem::exists(request->file_path()))
+        // 校验业务层传递的 FastDFS 文件 ID 非空且文件真实存在(下载失败视为文件不存在)
+        std::string downloaded_content;
+        if (request->fastdfs_file_id().empty() ||
+            !cpp_toolkit::FdfsClient::DownloadToBuffer(request->fastdfs_file_id(), downloaded_content))
         {
             response->set_error_code(static_cast<int>(ErrorCode::EXCEL_PARSE_FILE_OPEN_FAILED));
-            response->set_error_msg("mock: 本地文件不存在");
+            response->set_error_msg("mock: FastDFS 文件不存在");
             return;
         }
         response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
@@ -243,7 +242,7 @@ void ExpectBusinessError(Call call, ErrorCode expected_code)
 
 } // namespace
 
-// 文件业务逻辑类测试夹具, 每个用例执行前清理数据库/缓存/本地暂存文件中的测试数据
+// 文件业务逻辑类测试夹具, 每个用例执行前清理数据库/缓存中的测试数据
 class FileBusinessTest : public ::testing::Test
 {
 protected:
@@ -256,10 +255,6 @@ protected:
         transaction.commit();
         GetRedisHandle()->del(kFileCacheKey);
         GetRedisHandle()->del(kWorkSheetCacheKey);
-
-        // 清理本地暂存目录
-        std::error_code error_code;
-        std::filesystem::remove_all(kLocalExcelFilesDir, error_code);
 
         // 初始化 FastDFS 客户端, 连接本地 docker 容器
         InitFdfsClient();
@@ -276,13 +271,6 @@ protected:
         const std::shared_ptr<WorkSheetData> worksheet_data =
             std::make_shared<WorkSheetData>(GetMysqlHandle(), GetRedisHandle());
         file_business_ = std::make_unique<FileBusiness>(file_data, worksheet_data, channel_manager_);
-    }
-
-    void TearDown() override
-    {
-        // 清理测试产生的本地暂存文件
-        std::error_code error_code;
-        std::filesystem::remove_all(kLocalExcelFilesDir, error_code);
     }
 
     /**
@@ -353,7 +341,7 @@ TEST_F(FileBusinessTest, GetFileInfoOwnerMismatch)
         ErrorCode::FILE_USER_MISMATCH);
 }
 
-// 上传文件数据 : 完整流程(FastDFS 上传 + 元信息更新 + WorkSheet 保存 + 本地文件删除)
+// 上传文件数据 : 完整流程(FastDFS 上传 + 元信息更新 + WorkSheet 保存, 传递 FastDFS 文件 ID 解析)
 TEST_F(FileBusinessTest, UploadFileDataFullFlow)
 {
     const std::string file_id = UploadTestFileInfo();
@@ -378,11 +366,6 @@ TEST_F(FileBusinessTest, UploadFileDataFullFlow)
     EXPECT_EQ(worksheet_list[1].file_id, file_id);
     EXPECT_EQ(worksheet_list[1].worksheet_name, "Sheet2");
     EXPECT_EQ(worksheet_list[1].table_name, file_id + "_Sheet2");
-
-    // 校验本地暂存文件已删除
-    const std::string local_file_path =
-        std::string(kLocalExcelFilesDir) + "/" + kTestUserId + "/" + file_id + "_test_excel.xlsx";
-    EXPECT_FALSE(std::filesystem::exists(local_file_path));
 
     // 校验 FastDFS 中文件数据可下载且内容一致
     const std::string downloaded_content =
@@ -465,15 +448,22 @@ TEST_F(FileBusinessTest, DeleteFileOwnerMismatch)
     EXPECT_TRUE(file_data.GetFileByFileId(file_id).has_value());
 }
 
-// 删除文件信息 : 校验属主后删除数据库与缓存中的文件信息
+// 删除文件信息 : 校验属主后删除数据库与缓存中的文件信息以及 WorkSheet 数据
 TEST_F(FileBusinessTest, DeleteFileInfoSuccess)
 {
     const std::string file_id = UploadTestFileInfo();
+    // 上传文件数据以产生 WorkSheet 元信息
+    file_business_->UploadFileData(kRequestId, kTestUserId, file_id, "content for delete info test");
+
     file_business_->DeleteFileInfo(kRequestId, kTestUserId, file_id);
 
     FileData file_data(GetMysqlHandle(), GetRedisHandle());
     EXPECT_FALSE(file_data.GetFileByFileId(file_id).has_value());
     EXPECT_FALSE(file_data.GetFileByFileIdFromCache(file_id).has_value());
+
+    // 校验 WorkSheet 元信息已删除
+    WorkSheetData worksheet_data(GetMysqlHandle(), GetRedisHandle());
+    EXPECT_TRUE(worksheet_data.GetWorkSheetListByFileId(file_id).empty());
 }
 
 // 获取文件列表 : 只返回当前用户上传的文件
@@ -514,7 +504,7 @@ TEST_F(FileBusinessTest, PreviewExcelOwnerMismatch)
         ErrorCode::FILE_USER_MISMATCH);
 }
 
-// 上传 SQLite 文件数据与获取 SQLite 文件 : FastDFS 上传后可下载到本地且内容一致
+// 上传 SQLite 文件数据与获取 SQLite 文件 : FastDFS 上传后返回文件 ID 且内容可下载一致
 TEST_F(FileBusinessTest, UploadSQLiteFileAndGet)
 {
     const std::string file_id = file_business_->UploadFileInfo(
@@ -529,14 +519,13 @@ TEST_F(FileBusinessTest, UploadSQLiteFileAndGet)
     ASSERT_TRUE(stored_file_info.has_value());
     EXPECT_FALSE(stored_file_info->fastdfs_file_id.empty());
 
-    // 获取 SQLite 文件到本地并校验内容一致
-    const std::string local_file_path =
+    // 获取 SQLite 文件对应的 FastDFS 文件 ID 并校验文件内容可下载且一致
+    const std::string fdfs_file_id =
         file_business_->GetSQLiteFile(kRequestId, kTestUserId, file_id);
-    EXPECT_TRUE(std::filesystem::exists(local_file_path));
-    std::ifstream file_stream(local_file_path, std::ios::binary);
-    const std::string local_content((std::istreambuf_iterator<char>(file_stream)),
-                                    std::istreambuf_iterator<char>());
-    EXPECT_EQ(local_content, file_content);
+    EXPECT_EQ(fdfs_file_id, stored_file_info->fastdfs_file_id);
+    std::string downloaded_content;
+    EXPECT_TRUE(cpp_toolkit::FdfsClient::DownloadToBuffer(fdfs_file_id, downloaded_content));
+    EXPECT_EQ(downloaded_content, file_content);
 }
 
 // 获取 SQLite 文件 : 文件数据尚未上传到 FastDFS 时抛出异常
