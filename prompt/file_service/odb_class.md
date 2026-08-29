@@ -17,9 +17,9 @@
 | file_extension | VARCHAR(16) | NOT NULL | | Excel 文件扩展名 |
 | file_size | BIGINT UNSIGNED | NOT NULL | | Excel 文件大小 |
 | file_upload_time | BIGINT UNSIGNED | NOT NULL | | Excel 文件上传时间 |
-| fastdfs_file_id | VARCHAR(64) | NOT NULL | | Excel 文件在 FastDFS 中的文件 ID |
+| fastdfs_file_id | VARCHAR(64) |  | | Excel 文件在 FastDFS 中的文件 ID |
 | user_id | VARCHAR(32) | NOT NULL | INDEX | 文件所属用户 ID |
-| session_id | VARCHAR(32) | NOT NULL | | 文件所属会话 ID |
+| session_id | VARCHAR(32) | | | 文件所属会话 ID |
 
 说明 : 
 1. 通过 file_id , 用户可以获取表中指定文件的文件元信息

@@ -110,10 +110,25 @@ FileInfo EntityToInfo(const FileEntity& entity)
     file_info.file_extension = entity.FileExtension();
     file_info.file_size = entity.FileSize();
     file_info.file_upload_time = entity.FileUploadTime();
-    file_info.fastdfs_file_id = entity.FastdfsFileId();
+    // fastdfs_file_id, session_id 在数据库中可为空, 读取时 NULL 转换为空串
+    file_info.fastdfs_file_id = entity.FastdfsFileId() ? *entity.FastdfsFileId() : "";
     file_info.user_id = entity.UserId();
-    file_info.session_id = entity.SessionId();
+    file_info.session_id = entity.SessionId() ? *entity.SessionId() : "";
     return file_info;
+}
+
+/**
+ * @brief 将 FastDFS 文件 ID 转换为可空字符串
+ * @param fastdfs_file_id FastDFS 文件 ID, 空串语义为文件尚未上传到 FastDFS
+ * @return 空串转换为 NULL, 其他转换为非空值
+ */
+odb::nullable<std::string> ToNullableFastdfsFileId(const std::string& fastdfs_file_id)
+{
+    if (fastdfs_file_id.empty())
+    {
+        return odb::nullable<std::string>();
+    }
+    return odb::nullable<std::string>(fastdfs_file_id);
 }
 
 } // namespace
@@ -132,11 +147,12 @@ void FileData::SaveFile(const FileInfo& file_info)
         // SQL : INSERT INTO tbl_file_info (file_id, file_name, file_extension, file_size,
         //       file_upload_time, fastdfs_file_id, user_id, session_id)
         //       VALUES ('{file_id}', '{file_name}', '{file_extension}', {file_size},
-        //       {file_upload_time}, '{fastdfs_file_id}', '{user_id}', '{session_id}')
+        //       {file_upload_time}, {fastdfs_file_id}(可为 NULL), '{user_id}', {session_id}(可为 NULL))
         odb::transaction transaction(mysql_handle_->begin());
         FileEntity entity(file_info.file_id, file_info.file_name, file_info.file_extension,
                           file_info.file_size, file_info.file_upload_time,
-                          file_info.fastdfs_file_id, file_info.user_id, file_info.session_id);
+                          ToNullableFastdfsFileId(file_info.fastdfs_file_id), file_info.user_id,
+                          file_info.session_id);
         mysql_handle_->persist(entity);
         transaction.commit();
         INFO("保存文件信息到数据库成功, file_id: {}", file_info.file_id);
@@ -175,7 +191,7 @@ void FileData::UpdateFile(const FileInfo& file_info)
         entity.SetFileExtension(file_info.file_extension);
         entity.SetFileSize(file_info.file_size);
         entity.SetFileUploadTime(file_info.file_upload_time);
-        entity.SetFastdfsFileId(file_info.fastdfs_file_id);
+        entity.SetFastdfsFileId(ToNullableFastdfsFileId(file_info.fastdfs_file_id));
         entity.SetUserId(file_info.user_id);
         entity.SetSessionId(file_info.session_id);
         mysql_handle_->update(entity);

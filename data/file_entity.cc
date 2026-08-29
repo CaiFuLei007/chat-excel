@@ -5,8 +5,10 @@ namespace chat_excel
 
 FileEntity::FileEntity(const std::string& file_id, const std::string& file_name,
                        const std::string& file_extension, unsigned long long file_size,
-                       unsigned long long file_upload_time, const std::string& fastdfs_file_id,
-                       const std::string& user_id, const std::string& session_id)
+                       unsigned long long file_upload_time,
+                       const odb::nullable<std::string>& fastdfs_file_id,
+                       const std::string& user_id,
+                       const odb::nullable<std::string>& session_id)
     : file_id_(file_id),
       file_name_(file_name),
       file_extension_(file_extension),
@@ -48,7 +50,7 @@ unsigned long long FileEntity::FileUploadTime() const
     return file_upload_time_;
 }
 
-const std::string& FileEntity::FastdfsFileId() const
+const odb::nullable<std::string>& FileEntity::FastdfsFileId() const
 {
     return fastdfs_file_id_;
 }
@@ -58,7 +60,7 @@ const std::string& FileEntity::UserId() const
     return user_id_;
 }
 
-const std::string& FileEntity::SessionId() const
+const odb::nullable<std::string>& FileEntity::SessionId() const
 {
     return session_id_;
 }
@@ -83,7 +85,7 @@ void FileEntity::SetFileUploadTime(unsigned long long file_upload_time)
     file_upload_time_ = file_upload_time;
 }
 
-void FileEntity::SetFastdfsFileId(const std::string& fastdfs_file_id)
+void FileEntity::SetFastdfsFileId(const odb::nullable<std::string>& fastdfs_file_id)
 {
     fastdfs_file_id_ = fastdfs_file_id;
 }
@@ -93,7 +95,7 @@ void FileEntity::SetUserId(const std::string& user_id)
     user_id_ = user_id;
 }
 
-void FileEntity::SetSessionId(const std::string& session_id)
+void FileEntity::SetSessionId(const odb::nullable<std::string>& session_id)
 {
     session_id_ = session_id;
 }

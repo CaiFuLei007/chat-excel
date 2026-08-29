@@ -2,6 +2,7 @@
 
 #include <string>
 #include <odb/core.hxx>
+#include <odb/nullable.hxx>
 
 namespace chat_excel
 {
@@ -32,7 +33,8 @@ public:
      */
     FileEntity(const std::string& file_id, const std::string& file_name, const std::string& file_extension,
                unsigned long long file_size, unsigned long long file_upload_time,
-               const std::string& fastdfs_file_id, const std::string& user_id, const std::string& session_id);
+               const odb::nullable<std::string>& fastdfs_file_id, const std::string& user_id,
+               const odb::nullable<std::string>& session_id);
 
     /**
      * @brief 获取自增主键 ID
@@ -72,9 +74,9 @@ public:
 
     /**
      * @brief 获取 Excel 文件在 FastDFS 中的文件 ID
-     * @return FastDFS 中的文件 ID
+     * @return FastDFS 中的文件 ID, 可为空(文件元信息先入库, 上传 FastDFS 后再更新)
      */
-    const std::string& FastdfsFileId() const;
+    const odb::nullable<std::string>& FastdfsFileId() const;
 
     /**
      * @brief 获取文件所属用户 ID
@@ -84,9 +86,9 @@ public:
 
     /**
      * @brief 获取文件所属会话 ID
-     * @return 文件所属会话 ID
+     * @return 文件所属会话 ID, 可为空(文件可以不属于任何聊天会话)
      */
-    const std::string& SessionId() const;
+    const odb::nullable<std::string>& SessionId() const;
 
     /**
      * @brief 设置 Excel 文件名
@@ -114,9 +116,9 @@ public:
 
     /**
      * @brief 设置 Excel 文件在 FastDFS 中的文件 ID
-     * @param fastdfs_file_id FastDFS 中的文件 ID
+     * @param fastdfs_file_id FastDFS 中的文件 ID, 空值表示文件尚未上传到 FastDFS
      */
-    void SetFastdfsFileId(const std::string& fastdfs_file_id);
+    void SetFastdfsFileId(const odb::nullable<std::string>& fastdfs_file_id);
 
     /**
      * @brief 设置文件所属用户 ID
@@ -126,9 +128,9 @@ public:
 
     /**
      * @brief 设置文件所属会话 ID
-     * @param session_id 文件所属会话 ID
+     * @param session_id 文件所属会话 ID, 空值表示文件不属于任何聊天会话
      */
-    void SetSessionId(const std::string& session_id);
+    void SetSessionId(const odb::nullable<std::string>& session_id);
 
 private:
     // odb 框架通过友元访问私有默认构造函数与私有数据成员
@@ -175,10 +177,11 @@ private:
     unsigned long long file_upload_time_;
 
     // Excel 文件在 FastDFS 中的文件 ID, 用于定位二进制文件内容
+    // 可为空(文件元信息先入库, 上传 FastDFS 后再更新该字段)
 #ifdef ODB_COMPILER
-#pragma db column("fastdfs_file_id") type("VARCHAR(64)") not_null
+#pragma db column("fastdfs_file_id") type("VARCHAR(64)")
 #endif
-    std::string fastdfs_file_id_;
+    odb::nullable<std::string> fastdfs_file_id_;
 
     // 文件所属用户 ID, 普通索引用于快速查找用户的文件信息
 #ifdef ODB_COMPILER
@@ -187,11 +190,11 @@ private:
 #endif
     std::string user_id_;
 
-    // 文件所属会话 ID
+    // 文件所属会话 ID, 可为空(文件可以不属于任何聊天会话)
 #ifdef ODB_COMPILER
-#pragma db column("session_id") type("VARCHAR(32)") not_null
+#pragma db column("session_id") type("VARCHAR(32)")
 #endif
-    std::string session_id_;
+    odb::nullable<std::string> session_id_;
 };
 
 } // namespace chat_excel
