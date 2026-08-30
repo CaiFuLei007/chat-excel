@@ -142,8 +142,6 @@ void DatabaseDriverFactory::RegisterDriver(DatabaseType database_type, DriverCre
 {
     auto& registry = GetRegistry();
     registry[database_type] = std::move(creator);
-    INFO("注册数据库驱动创建器成功, database_type: {}",
-         database_type == DatabaseType::MYSQL ? "MYSQL" : "SQLITE");
 }
 
 std::shared_ptr<DatabaseDriver> DatabaseDriverFactory::CreateDriver(std::shared_ptr<DatabaseConfig> config)
