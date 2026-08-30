@@ -38,6 +38,9 @@ add_subdirectory(svc_excel_parse_service)
 # 文件子服务
 add_subdirectory(svc_file_service)
 
+# 数据库子服务
+add_subdirectory(svc_database_service)
+
 # 查找 gtest 测试框架
 find_package(GTest REQUIRED)
 
@@ -71,3 +74,6 @@ add_subdirectory(test/svc_user_service/user_service_impl)
 
 # Excel 解析子服务单元测试
 add_subdirectory(test/svc_excel_parse_service/excel_parse)
+
+# 数据库子服务驱动层单元测试
+add_subdirectory(test/svc_database_service/driver)

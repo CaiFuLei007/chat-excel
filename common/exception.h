@@ -170,6 +170,52 @@ enum class ErrorCode : int
     // 文件子服务内部错误
     FILE_SERVICE_INTERNAL_ERROR = 233,
 
+    // ==================== 数据库子服务错误码范围 300 - 399 ====================
+    // 数据库连接失败
+    DB_CONNECTION_FAILED = 300,
+
+    // 数据库断开连接失败
+    DB_DISCONNECT_FAILED = 301,
+
+    // 数据库尚未建立连接
+    DB_NOT_CONNECTED = 302,
+
+    // 数据库配置无效
+    DB_CONFIG_INVALID = 303,
+
+    // 不支持的数据库类型
+    DB_UNSUPPORTED_DATABASE_TYPE = 304,
+
+    // SQL 执行失败
+    DB_EXECUTE_FAILED = 305,
+
+    // 预编译语句构建失败
+    DB_PREPARE_FAILED = 306,
+
+    // 预编译语句参数绑定失败
+    DB_PARAM_BIND_FAILED = 307,
+
+    // 查询结果获取失败
+    DB_RESULT_FETCH_FAILED = 308,
+
+    // 事务操作失败
+    DB_TRANSACTION_FAILED = 309,
+
+    // SQL 语句为空
+    DB_SQL_EMPTY = 310,
+
+    // SQL 语句无效或类型不受支持
+    DB_SQL_INVALID = 311,
+
+    // SQL 语句包含危险操作
+    DB_SQL_DANGEROUS = 312,
+
+    // SQL 语句包含多条语句
+    DB_SQL_MULTIPLE_STATEMENTS = 313,
+
+    // 数据库标识符(表名, 列名)无效
+    DB_IDENTIFIER_INVALID = 314,
+
     // ==================== Excel 解析子服务错误码范围 400 - 499 ====================
     // Excel 文件打开失败(文件不存在或格式非法)
     EXCEL_PARSE_FILE_OPEN_FAILED = 400,
