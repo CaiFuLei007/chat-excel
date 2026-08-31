@@ -4,6 +4,7 @@
 #include <string>
 #include <httplib.h>
 #include <cpp-toolkit/rpc.h>
+#include "database_service.pb.h"
 #include "file_service.pb.h"
 #include "user_service.pb.h"
 
@@ -16,9 +17,12 @@ namespace proto = ::chat_excel_proto::user_service;
 // 文件子服务 proto 生成代码所在命名空间的别名, 简化 RPC 客户端类型签名
 namespace file_proto = ::chat_excel_proto::file_service;
 
+// 数据库子服务 proto 生成代码所在命名空间的别名, 简化 RPC 客户端类型签名
+namespace db_proto = ::chat_excel_proto::database_service;
+
 /**
  * @brief 网关 HTTP 接口定义类, 负责全部 30 个 HTTP 接口的定义与路由绑定
- *        已实现健康检测接口、用户子服务 9 个接口与文件子服务 9 个接口, 其余接口只定义不实现(空处理函数), 后续版本补充业务逻辑
+ *        已实现健康检测接口、用户子服务 9 个接口、文件子服务 9 个接口与数据库子服务 5 个接口, 其余接口只定义不实现(空处理函数), 后续版本补充业务逻辑
  *        内部持有服务信道管理对象, 供各接口实现时获取 RPC 服务器 Channel
  *        注意 : 本类对象必须使用 std::shared_ptr 管理(路由回调依赖 shared_from_this 保活)
  */
@@ -171,6 +175,13 @@ private:
      * @return 文件子服务 RPC 客户端存根, 获取信道失败时返回 nullptr
      */
     std::unique_ptr<file_proto::FileService_Stub> CreateFileRpcStub(cpp_toolkit::ChannelPtr& channel);
+
+    /**
+     * @brief 创建数据库子服务 RPC 客户端存根, 内部获取数据库子服务信道
+     * @param channel 输出参数, 获取到的 RPC 信道对象(客户端存根依赖信道对象存活, RPC 调用期间须由调用方保持其生命周期)
+     * @return 数据库子服务 RPC 客户端存根, 获取信道失败时返回 nullptr
+     */
+    std::unique_ptr<db_proto::DatabaseService_Stub> CreateDatabaseRpcStub(cpp_toolkit::ChannelPtr& channel);
 
     /**
      * @brief 鉴权辅助函数, 调用用户子服务 ValidSession RPC 接口检查会话是否有效, 并返回会话所属用户 ID

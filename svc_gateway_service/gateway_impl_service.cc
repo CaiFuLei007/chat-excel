@@ -9,6 +9,7 @@
 #include <cpp-toolkit/util.h>
 #include <jsoncpp/json/json.h>
 #include "common/exception.h"
+#include "database_service.pb.h"
 #include "file_service.pb.h"
 #include "user_service.pb.h"
 
@@ -21,6 +22,9 @@ namespace proto = ::chat_excel_proto::user_service;
 // 文件子服务 proto 生成代码所在命名空间的别名, 简化 RPC 客户端调用
 namespace file_proto = ::chat_excel_proto::file_service;
 
+// 数据库子服务 proto 生成代码所在命名空间的别名, 简化 RPC 客户端调用
+namespace db_proto = ::chat_excel_proto::database_service;
+
 namespace
 {
 
@@ -29,6 +33,9 @@ constexpr char kUserServiceName[] = "UserService";
 
 // 文件子服务名称(与文件子服务注册到 ETCD 注册中心的服务名保持一致)
 constexpr char kFileServiceName[] = "FileService";
+
+// 数据库子服务名称(与数据库子服务注册到 ETCD 注册中心的服务名保持一致)
+constexpr char kDatabaseServiceName[] = "DataBaseService";
 
 // 用户子服务 RPC 调用超时时间(毫秒)
 constexpr int kRpcTimeoutMilliseconds = 3000;
@@ -227,6 +234,50 @@ bool CallFileRpc(const std::string& request_id,
     if (response_attachment != nullptr)
     {
         *response_attachment = controller.response_attachment().to_string();
+    }
+
+    // RPC 调用成功但业务处理失败, 透传后端业务错误码与错误信息
+    error_code = rpc_response.error_code();
+    error_msg = rpc_response.error_msg();
+    if (error_code != static_cast<int>(ErrorCode::SUCCESS))
+    {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief 数据库子服务 RPC 同步调用通用流程封装, 内部完成超时设置、接口调用与结果检查
+ * @param request_id 请求 ID, 用于日志链路追踪
+ * @param database_service_stub 数据库子服务 RPC 客户端存根
+ * @param rpc_method RPC 客户端成员函数指针, 指向调用的 RPC 接口
+ * @param rpc_request RPC 请求对象
+ * @param rpc_response 输出参数, RPC 响应对象
+ * @param error_code 输出参数, 调用失败时的错误码(RPC 调用失败为网关错误码 503, 业务失败为透传的后端业务错误码)
+ * @param error_msg 输出参数, 调用失败时的错误信息
+ * @return true RPC 调用成功且业务处理成功, false RPC 调用失败或业务处理失败(错误信息通过输出参数返回)
+ */
+template <typename RequestType, typename ResponseType>
+bool CallDatabaseRpc(const std::string& request_id,
+                     db_proto::DatabaseService_Stub* database_service_stub,
+                     void (db_proto::DatabaseService_Stub::*rpc_method)(google::protobuf::RpcController*, const RequestType*, ResponseType*, google::protobuf::Closure*),
+                     const RequestType& rpc_request,
+                     ResponseType& rpc_response,
+                     int& error_code,
+                     std::string& error_msg)
+{
+    // 同步调用数据库子服务的 RPC 接口, 设置调用超时时间
+    brpc::Controller controller;
+    controller.set_timeout_ms(kRpcTimeoutMilliseconds);
+    (database_service_stub->*rpc_method)(&controller, &rpc_request, &rpc_response, nullptr);
+
+    // RPC 调用失败(网络超时、服务不可达等), 返回后端服务不可用错误码
+    if (controller.Failed())
+    {
+        ERR("数据库子服务 RPC 调用失败, requestId: {}, 错误信息: {}", request_id, controller.ErrorText());
+        error_code = kGatewayErrorCodeUnavailable;
+        error_msg = "数据库子服务 RPC 调用失败 : " + controller.ErrorText();
+        return false;
     }
 
     // RPC 调用成功但业务处理失败, 透传后端业务错误码与错误信息
@@ -480,6 +531,20 @@ std::unique_ptr<file_proto::FileService_Stub> GatewayServiceImpl::CreateFileRpcS
 
     // 创建文件子服务 RPC 客户端存根, 信道对象通过输出参数交由调用方持有(存根依赖信道对象存活)
     return std::make_unique<file_proto::FileService_Stub>(channel.get());
+}
+
+std::unique_ptr<db_proto::DatabaseService_Stub> GatewayServiceImpl::CreateDatabaseRpcStub(cpp_toolkit::ChannelPtr& channel)
+{
+    // 获取数据库子服务信道
+    channel = GetServiceChannel(kDatabaseServiceName);
+    if (channel == nullptr)
+    {
+        ERR("获取数据库子服务信道失败, 服务名称: {}", kDatabaseServiceName);
+        return nullptr;
+    }
+
+    // 创建数据库子服务 RPC 客户端存根, 信道对象通过输出参数交由调用方持有(存根依赖信道对象存活)
+    return std::make_unique<db_proto::DatabaseService_Stub>(channel.get());
 }
 
 bool GatewayServiceImpl::CheckSessionValid(const std::string& request_id, const std::string& session_id,
@@ -1678,34 +1743,401 @@ void GatewayServiceImpl::HandleFileSqliteUpload(const httplib::Request& request,
          request_id, filename, request.body.size(), rpc_response.result().file_id(), error_code);
 }
 
-void GatewayServiceImpl::HandleDbConnect(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleDbConnect(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[D01] 新建数据库连接接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求体, 提取请求 ID、会话 ID 与数据库配置
+    Json::Value request_json;
+    std::string request_id;
+    if (!ParseJsonBody(request, request_json, request_id))
+    {
+        SendEnvelopeResponse(response, "", kGatewayErrorCodeParams, "请求体 JSON 解析失败或缺少 requestId 字段");
+        return;
+    }
+    std::string session_id = request_json["sessionId"].asString();
+    const Json::Value& database_json = request_json["database"];
+    std::string database_type = database_json["type"].asString();
+    if (session_id.empty() || database_json.isNull() || database_type.empty())
+    {
+        ERR("[D01] 请求参数错误, sessionId 或 database 缺失或为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : sessionId 与 database(type) 不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效并获取用户 ID, 失败时透传错误码与错误信息
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建数据库子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<db_proto::DatabaseService_Stub> database_service_stub = CreateDatabaseRpcStub(channel);
+    if (database_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "数据库子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求, 将 HTTP 请求中的数据库配置映射为 proto 数据库配置
+    db_proto::ConnectDatabaseRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_session_id(session_id);
+    rpc_request.set_user_id(user_id);
+    db_proto::DatabaseConfig* database_config = rpc_request.mutable_database();
+    if (database_type == "MySQL")
+    {
+        // 校验 MySQL 数据库配置, 主机/库名/用户名不能为空
+        const Json::Value& mysql_json = database_json["MySQL"];
+        if (mysql_json.isNull() || mysql_json["host"].asString().empty() ||
+            mysql_json["name"].asString().empty() || mysql_json["username"].asString().empty())
+        {
+            ERR("[D01] 请求参数错误, MySQL 数据库配置缺失或 host/name/username 存在空值, requestId: {}", request_id);
+            SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                                 "请求参数错误 : MySQL 数据库配置的 host、name 与 username 不能为空");
+            return;
+        }
+
+        // 填充 MySQL 数据库配置(端口与字符集为空时使用数据库子服务默认值)
+        database_config->set_type(db_proto::DATABASE_TYPE_MYSQL);
+        db_proto::MySQLDatabaseConfig* mysql_config = database_config->mutable_mysql_config();
+        mysql_config->set_host(mysql_json["host"].asString());
+        mysql_config->set_port(mysql_json["port"].asInt());
+        mysql_config->set_name(mysql_json["name"].asString());
+        mysql_config->set_username(mysql_json["username"].asString());
+        mysql_config->set_password(mysql_json["password"].asString());
+        mysql_config->set_charset(mysql_json["charset"].asString());
+    }
+    else if (database_type == "SQLite")
+    {
+        // 校验 SQLite 数据库配置, SQLite 文件 ID 不能为空
+        const Json::Value& sqlite_json = database_json["SQLite"];
+        if (sqlite_json.isNull() || sqlite_json["fileId"].asString().empty())
+        {
+            ERR("[D01] 请求参数错误, SQLite 数据库配置缺失或 fileId 为空, requestId: {}", request_id);
+            SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                                 "请求参数错误 : SQLite 数据库配置的 fileId 不能为空");
+            return;
+        }
+
+        // 填充 SQLite 数据库配置(只读标志缺省时默认为 false)
+        database_config->set_type(db_proto::DATABASE_TYPE_SQLITE);
+        db_proto::SQLiteDatabaseConfig* sqlite_config = database_config->mutable_sqlite_config();
+        sqlite_config->set_file_id(sqlite_json["fileId"].asString());
+        sqlite_config->set_readonly(sqlite_json["readonly"].asBool());
+    }
+    else
+    {
+        ERR("[D01] 请求参数错误, 不支持的数据库类型: {}, requestId: {}", database_type, request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : 数据库类型仅支持 MySQL 与 SQLite");
+        return;
+    }
+
+    // 5. 调用数据库子服务的 RPC 接口, 失败时透传错误码与错误信息
+    db_proto::ConnectDatabaseResponse rpc_response;
+    if (!CallDatabaseRpc(request_id, database_service_stub.get(), &db_proto::DatabaseService_Stub::ConnectDatabase,
+                         rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建连接结果(数据库连接 ID)并发送 HTTP 响应
+    Json::Value result;
+    result["connectionId"] = rpc_response.result().connection_id();
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);
+    INFO("[D01] 新建数据库连接接口处理完成, requestId: {}, connectionId: {}, errorCode: {}",
+         request_id, rpc_response.result().connection_id(), error_code);
 }
 
-void GatewayServiceImpl::HandleDbDisconnect(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleDbDisconnect(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[D02] 断开数据库连接接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求体, 提取请求 ID、会话 ID 与数据库连接 ID
+    Json::Value request_json;
+    std::string request_id;
+    if (!ParseJsonBody(request, request_json, request_id))
+    {
+        SendEnvelopeResponse(response, "", kGatewayErrorCodeParams, "请求体 JSON 解析失败或缺少 requestId 字段");
+        return;
+    }
+    std::string session_id = request_json["sessionId"].asString();
+    std::string connection_id = request_json["connectionId"].asString();
+    if (session_id.empty() || connection_id.empty())
+    {
+        ERR("[D02] 请求参数错误, sessionId 或 connectionId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : sessionId 与 connectionId 不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效, 失败时透传错误码与错误信息
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建数据库子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<db_proto::DatabaseService_Stub> database_service_stub = CreateDatabaseRpcStub(channel);
+    if (database_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "数据库子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求
+    db_proto::DisconnectDatabaseRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_session_id(session_id);
+    rpc_request.set_connection_id(connection_id);
+
+    // 5. 调用数据库子服务的 RPC 接口, 失败时透传错误码与错误信息
+    db_proto::DisconnectDatabaseResponse rpc_response;
+    if (!CallDatabaseRpc(request_id, database_service_stub.get(), &db_proto::DatabaseService_Stub::DisconnectDatabase,
+                         rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建 HTTP 响应(接口无返回数据, 不携带 result 字段)
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg);
+    INFO("[D02] 断开数据库连接接口处理完成, requestId: {}, connectionId: {}, errorCode: {}",
+         request_id, connection_id, error_code);
 }
 
-void GatewayServiceImpl::HandleDbTables(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleDbTables(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[D03] 获取数据库表列表接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求 query 参数(本接口参数全部在 query 中, 请求体为空)
+    std::string request_id;
+    std::string session_id;
+    if (!ParseQueryBaseParams(request, request_id, session_id))
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : requestId 与 sessionId 不能为空");
+        return;
+    }
+    std::string db_connect_id = request.get_param_value("dbConnectId");
+    if (db_connect_id.empty())
+    {
+        ERR("[D03] 请求参数错误, dbConnectId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : dbConnectId 不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效, 失败时透传错误码与错误信息
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建数据库子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<db_proto::DatabaseService_Stub> database_service_stub = CreateDatabaseRpcStub(channel);
+    if (database_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "数据库子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求
+    db_proto::ListTablesRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_session_id(session_id);
+    rpc_request.set_db_connect_id(db_connect_id);
+
+    // 5. 调用数据库子服务的 RPC 接口, 失败时透传错误码与错误信息
+    db_proto::ListTablesResponse rpc_response;
+    if (!CallDatabaseRpc(request_id, database_service_stub.get(), &db_proto::DatabaseService_Stub::ListTables,
+                         rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建表名列表结果并发送 HTTP 响应
+    Json::Value result;
+    Json::Value tables(Json::arrayValue);
+    for (const std::string& table_name : rpc_response.result().tables())
+    {
+        tables.append(table_name);
+    }
+    result["tables"] = tables;
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);
+    INFO("[D03] 获取数据库表列表接口处理完成, requestId: {}, dbConnectId: {}, errorCode: {}",
+         request_id, db_connect_id, error_code);
 }
 
-void GatewayServiceImpl::HandleDbTableData(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleDbTableData(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[D04] 获取表数据接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求体, 提取请求 ID、会话 ID、数据库连接 ID、表名与强制原始数据标志
+    Json::Value request_json;
+    std::string request_id;
+    if (!ParseJsonBody(request, request_json, request_id))
+    {
+        SendEnvelopeResponse(response, "", kGatewayErrorCodeParams, "请求体 JSON 解析失败或缺少 requestId 字段");
+        return;
+    }
+    std::string session_id = request_json["sessionId"].asString();
+    std::string db_connect_id = request_json["dbConnectId"].asString();
+    std::string table_name = request_json["tableName"].asString();
+    if (session_id.empty() || db_connect_id.empty() || table_name.empty())
+    {
+        ERR("[D04] 请求参数错误, sessionId/dbConnectId/tableName 存在空值, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : sessionId、dbConnectId 与 tableName 不能为空");
+        return;
+    }
+    bool force_original = request_json["forceOriginal"].asBool();
+
+    // 2. 鉴权, 检查会话是否有效, 失败时透传错误码与错误信息
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建数据库子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<db_proto::DatabaseService_Stub> database_service_stub = CreateDatabaseRpcStub(channel);
+    if (database_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "数据库子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求(HTTP 接口未携带页码与每页行数, 由数据库子服务按默认值处理)
+    db_proto::GetTableDataRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_session_id(session_id);
+    rpc_request.set_db_connect_id(db_connect_id);
+    rpc_request.set_table_name(table_name);
+    rpc_request.set_force_original(force_original);
+
+    // 5. 调用数据库子服务的 RPC 接口, 失败时透传错误码与错误信息
+    db_proto::GetTableDataResponse rpc_response;
+    if (!CallDatabaseRpc(request_id, database_service_stub.get(), &db_proto::DatabaseService_Stub::GetTableData,
+                         rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建表结构信息结果(列信息 + 行数据)并发送 HTTP 响应
+    const db_proto::TableSchemaInfo& table_schema = rpc_response.result().table_schema();
+    Json::Value column_info(Json::arrayValue);
+    for (const db_proto::ColumnInfo& column : table_schema.column_info())
+    {
+        Json::Value column_json;
+        column_json["name"] = column.name();
+        column_json["type"] = column.type();
+        column_info.append(column_json);
+    }
+    Json::Value rows(Json::arrayValue);
+    for (const db_proto::Row& row : table_schema.table_data().rows())
+    {
+        Json::Value row_json;
+        Json::Value cells(Json::arrayValue);
+        for (const std::string& cell : row.cells())
+        {
+            cells.append(cell);
+        }
+        row_json["cells"] = cells;
+        rows.append(row_json);
+    }
+    Json::Value table_data;
+    table_data["rows"] = rows;
+    Json::Value table_schema_json;
+    table_schema_json["columnInfo"] = column_info;
+    table_schema_json["tableData"] = table_data;
+    Json::Value result;
+    result["tableSchema"] = table_schema_json;
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);
+    INFO("[D04] 获取表数据接口处理完成, requestId: {}, dbConnectId: {}, tableName: {}, errorCode: {}",
+         request_id, db_connect_id, table_name, error_code);
 }
 
-void GatewayServiceImpl::HandleDbConnectionStatus(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleDbConnectionStatus(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[D05] 获取连接状态接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求体, 提取请求 ID、会话 ID 与数据库连接 ID
+    Json::Value request_json;
+    std::string request_id;
+    if (!ParseJsonBody(request, request_json, request_id))
+    {
+        SendEnvelopeResponse(response, "", kGatewayErrorCodeParams, "请求体 JSON 解析失败或缺少 requestId 字段");
+        return;
+    }
+    std::string session_id = request_json["sessionId"].asString();
+    std::string db_connect_id = request_json["dbConnectId"].asString();
+    if (session_id.empty() || db_connect_id.empty())
+    {
+        ERR("[D05] 请求参数错误, sessionId 或 dbConnectId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : sessionId 与 dbConnectId 不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效, 失败时透传错误码与错误信息
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建数据库子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<db_proto::DatabaseService_Stub> database_service_stub = CreateDatabaseRpcStub(channel);
+    if (database_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "数据库子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求(获取连接临时表接口不依赖会话 ID 与用户 ID)
+    db_proto::GetConnTempTablesRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_db_connect_id(db_connect_id);
+
+    // 5. 调用数据库子服务的 RPC 接口, 失败时透传错误码与错误信息
+    db_proto::GetConnTempTablesResponse rpc_response;
+    if (!CallDatabaseRpc(request_id, database_service_stub.get(), &db_proto::DatabaseService_Stub::GetConnTempTables,
+                         rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建连接状态结果(临时表名列表 + 是否有修改)并发送 HTTP 响应
+    Json::Value result;
+    Json::Value temp_tables(Json::arrayValue);
+    for (const std::string& temp_table : rpc_response.temp_tables())
+    {
+        temp_tables.append(temp_table);
+    }
+    result["tempTables"] = temp_tables;
+    result["hasModifications"] = rpc_response.has_temp_tables();
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);
+    INFO("[D05] 获取连接状态接口处理完成, requestId: {}, dbConnectId: {}, errorCode: {}",
+         request_id, db_connect_id, error_code);
 }
 
 void GatewayServiceImpl::HandleAiModels(const httplib::Request& request, httplib::Response&)
