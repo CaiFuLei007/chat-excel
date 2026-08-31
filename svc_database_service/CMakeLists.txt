@@ -62,3 +62,29 @@ add_library(chat_excel_database_connection STATIC
 target_link_libraries(chat_excel_database_connection PUBLIC
     chat_excel_database_driver
 )
+
+# =================================================================
+#                         生成静态库(业务逻辑层)
+# =================================================================
+
+# 数据库子服务业务逻辑层静态库 : 数据库业务逻辑类
+add_library(chat_excel_database_business STATIC
+    database_business.cpp
+)
+
+# 头文件搜索路径 :
+#   项目根目录 : 支持以 #include "svc_database_service/xxx.h" 方式导入
+target_include_directories(chat_excel_database_business PUBLIC
+    ${PROJECT_SOURCE_DIR}
+)
+
+# 链接依赖 :
+#   chat_excel_database_connection : 连接管理器, 业务层通过它操作数据库连接
+#   chat_excel_proto               : protoc 生成的数据库子服务 RPC 接口代码,
+#                                    传递链接 protobuf 运行时库与头文件搜索路径
+#   cpp_toolkit 由 chat_excel_database_connection 传递链接(logger 日志,
+#   JsonUtil JSON 序列化, rpc 信道管理, fdfs 文件下载)
+target_link_libraries(chat_excel_database_business PUBLIC
+    chat_excel_database_connection
+    chat_excel_proto
+)
