@@ -1,6 +1,8 @@
 #!/bin/bash
 # ============================================================================
-# 网关用户子服务 9 个 HTTP 接口 curl 集成测试脚本
+# 网关 HTTP 接口 curl 集成测试脚本(汇总)
+#   第一部分 : 用户子服务 9 个 HTTP 接口(U01-U09)
+#   第二部分 : 存储子服务 5 个 HTTP 接口(D01-D05, 见文件末尾)
 #
 # 测试前置条件 :
 #   1. docker 容器已启动 : mysql(3306) / redis(6379) / etcd(2379), 密码均为 123456
@@ -8,6 +10,8 @@
 #      ./build/svc_user_service/user_service --mysql_password=123456 --redis_password=123456
 #   3. 网关子服务已启动 :
 #      ./build/svc_gateway_service/gateway_service
+#   4. 数据库子服务已启动(第二部分 D01-D05 依赖) :
+#      ./build/svc_database_service/database_service --mysql_password=123456
 #
 # 响应格式约定 :
 #   HTTP 状态码统一 200, 处理结果通过响应体 errorCode 表达 :
@@ -350,3 +354,154 @@ echo "======== 测试数据清理(可选, 取消注释执行) ========"
 #     -e "DELETE FROM tbl_session WHERE user_id=(SELECT user_id FROM tbl_user WHERE nickname='${TEST_NICKNAME}'); \
 #         DELETE FROM tbl_user WHERE nickname='${TEST_NICKNAME}';" 2>/dev/null
 # docker exec redis redis-cli -a 123456 DEL session_data user_data verifycode_data 2>/dev/null
+
+# ============================================================================
+# 第二部分 : 网关存储子服务 5 个 HTTP 接口 curl 集成测试
+# 覆盖接口 : D01 新建数据库连接 / D02 断开数据库连接 / D03 获取数据库表列表
+#            D04 获取表数据 / D05 获取连接状态
+#
+# 前置条件(在第一部分基础上额外依赖) :
+#   1. 数据库子服务已启动 :
+#      ./build/svc_database_service/database_service --mysql_password=123456
+#   2. MySQL 中存在可连接的数据库(本脚本使用 chat_excel, root/123456)
+#
+# 响应格式约定(数据库场景) :
+#     0    : 成功
+#     400  : 网关层错误(必填参数缺失 / 非法数据库类型)
+#     503  : 网关层错误(数据库子服务不可用 / RPC 调用失败)
+#     3xx  : 后端业务错误码透传(如 315 数据库连接不存在)
+#
+# 数据状态说明 : 数据库连接由数据库子服务连接管理器在内存中持有, 不落盘;
+#               断开连接后再次操作该连接返回 315
+# ============================================================================
+
+# 测试连接使用的 MySQL 数据库配置
+DB_MYSQL_HOST="127.0.0.1"
+DB_MYSQL_PORT="3306"
+DB_MYSQL_NAME="chat_excel"
+DB_MYSQL_USER="root"
+DB_MYSQL_PASSWORD="123456"
+
+# 运行过程中提取的动态值
+CONNECTION_ID=""
+
+# ==================== 前置 : 存储子服务测试重新登录 ====================
+
+echo "======== [前置] 存储子服务测试重新登录 ========"
+# 说明 : 第一部分 U08 已退出登录, 此处重新登录获取新的 sessionId 供 D01-D05 鉴权使用
+# 预期 : errorCode=0, 返回 result.sessionId
+RESP=$(curl -s -X POST ${GATEWAY_URL}/api/user/passwd/login \
+    -H "Content-Type: application/json" \
+    -d "{\"requestId\":\"req-db-login-0\",\"username\":\"${TEST_NICKNAME}\",\"password\":\"${TEST_PASSWORD}\"}")
+echo "${RESP}"
+SESSION_ID=$(ExtractJsonField "${RESP}" "result.sessionId")
+echo "提取 sessionId: ${SESSION_ID}"
+
+# ==================== D01 新建数据库连接 ====================
+
+echo "======== D01 新建数据库连接 ========"
+# 预期 : errorCode=0, 返回 result.connectionId(MySQL 连接成功)
+# 数据状态 : 数据库子服务连接管理器内存中新增连接
+RESP=$(curl -s -X POST ${GATEWAY_URL}/api/db/connect \
+    -H "Content-Type: application/json" \
+    -d "{\"requestId\":\"req-d01-1\",\"sessionId\":\"${SESSION_ID}\",\"database\":{\"type\":\"MySQL\",\"MySQL\":{\"host\":\"${DB_MYSQL_HOST}\",\"port\":${DB_MYSQL_PORT},\"name\":\"${DB_MYSQL_NAME}\",\"username\":\"${DB_MYSQL_USER}\",\"password\":\"${DB_MYSQL_PASSWORD}\",\"charset\":\"utf8mb4\"}}}")
+echo "${RESP}"
+CONNECTION_ID=$(ExtractJsonField "${RESP}" "result.connectionId")
+echo "提取 connectionId: ${CONNECTION_ID}"
+
+# 预期 : errorCode=400, 不支持的数据库类型
+curl -s -X POST ${GATEWAY_URL}/api/db/connect \
+    -H "Content-Type: application/json" \
+    -d "{\"requestId\":\"req-d01-2\",\"sessionId\":\"${SESSION_ID}\",\"database\":{\"type\":\"Oracle\",\"MySQL\":{\"host\":\"${DB_MYSQL_HOST}\",\"port\":${DB_MYSQL_PORT},\"name\":\"${DB_MYSQL_NAME}\",\"username\":\"${DB_MYSQL_USER}\",\"password\":\"${DB_MYSQL_PASSWORD}\",\"charset\":\"utf8mb4\"}}}"
+echo ""
+
+# 预期 : errorCode=400, 缺少必填参数 database
+curl -s -X POST ${GATEWAY_URL}/api/db/connect \
+    -H "Content-Type: application/json" \
+    -d "{\"requestId\":\"req-d01-3\",\"sessionId\":\"${SESSION_ID}\"}"
+echo ""
+
+# 预期 : errorCode=111, 会话无效(鉴权失败透传后端错误码)
+curl -s -X POST ${GATEWAY_URL}/api/db/connect \
+    -H "Content-Type: application/json" \
+    -d "{\"requestId\":\"req-d01-4\",\"sessionId\":\"invalid-session-id-000\",\"database\":{\"type\":\"MySQL\",\"MySQL\":{\"host\":\"${DB_MYSQL_HOST}\",\"port\":${DB_MYSQL_PORT},\"name\":\"${DB_MYSQL_NAME}\",\"username\":\"${DB_MYSQL_USER}\",\"password\":\"${DB_MYSQL_PASSWORD}\",\"charset\":\"utf8mb4\"}}}"
+echo ""
+
+# ==================== D03 获取数据库表列表 ====================
+
+echo "======== D03 获取数据库表列表 ========"
+# 注意 : 本接口参数全部在 URL query 中, 不在请求体中
+# 预期 : errorCode=0, 返回 result.tables(表名数组)
+curl -s "${GATEWAY_URL}/api/db/tables?requestId=req-d03-1&sessionId=${SESSION_ID}&dbConnectId=${CONNECTION_ID}"
+echo ""
+
+# 预期 : errorCode=315, 数据库连接不存在(透传后端业务错误码)
+curl -s "${GATEWAY_URL}/api/db/tables?requestId=req-d03-2&sessionId=${SESSION_ID}&dbConnectId=no-such-connection"
+echo ""
+
+# 预期 : errorCode=400, 缺少必填参数 dbConnectId
+curl -s "${GATEWAY_URL}/api/db/tables?requestId=req-d03-3&sessionId=${SESSION_ID}"
+echo ""
+
+# ==================== D04 获取表数据 ====================
+
+echo "======== D04 获取表数据 ========"
+# 预期 : errorCode=0, 返回 result.tableSchema(columnInfo 列信息 + tableData.rows 行数据)
+# 数据状态 : 只读查询, 不产生数据变更
+curl -s -X POST ${GATEWAY_URL}/api/db/table/data \
+    -H "Content-Type: application/json" \
+    -d "{\"requestId\":\"req-d04-1\",\"sessionId\":\"${SESSION_ID}\",\"dbConnectId\":\"${CONNECTION_ID}\",\"tableName\":\"tbl_user\",\"forceOriginal\":true}"
+echo ""
+
+# 预期 : errorCode=400, 缺少必填参数 tableName
+curl -s -X POST ${GATEWAY_URL}/api/db/table/data \
+    -H "Content-Type: application/json" \
+    -d "{\"requestId\":\"req-d04-2\",\"sessionId\":\"${SESSION_ID}\",\"dbConnectId\":\"${CONNECTION_ID}\"}"
+echo ""
+
+# ==================== D05 获取连接状态 ====================
+
+echo "======== D05 获取连接状态 ========"
+# 预期 : errorCode=0, 返回 result.tempTables 与 result.hasModifications
+#        (连接未执行过修改类 SQL 时 tempTables 为空数组, hasModifications=false)
+curl -s -X POST ${GATEWAY_URL}/api/db/connection/status \
+    -H "Content-Type: application/json" \
+    -d "{\"requestId\":\"req-d05-1\",\"sessionId\":\"${SESSION_ID}\",\"dbConnectId\":\"${CONNECTION_ID}\"}"
+echo ""
+
+# 预期 : errorCode=400, 缺少必填参数 dbConnectId
+curl -s -X POST ${GATEWAY_URL}/api/db/connection/status \
+    -H "Content-Type: application/json" \
+    -d "{\"requestId\":\"req-d05-2\",\"sessionId\":\"${SESSION_ID}\"}"
+echo ""
+
+# ==================== D02 断开数据库连接 ====================
+
+echo "======== D02 断开数据库连接 ========"
+# 预期 : errorCode=0, 断开成功(接口无返回数据, 不携带 result 字段)
+# 数据状态 : 数据库子服务连接管理器删除该连接
+curl -s -X POST ${GATEWAY_URL}/api/db/disconnect \
+    -H "Content-Type: application/json" \
+    -d "{\"requestId\":\"req-d02-1\",\"sessionId\":\"${SESSION_ID}\",\"connectionId\":\"${CONNECTION_ID}\"}"
+echo ""
+
+# 预期 : errorCode=315, 重复断开已删除的连接(连接不存在, 透传后端业务错误码)
+curl -s -X POST ${GATEWAY_URL}/api/db/disconnect \
+    -H "Content-Type: application/json" \
+    -d "{\"requestId\":\"req-d02-2\",\"sessionId\":\"${SESSION_ID}\",\"connectionId\":\"${CONNECTION_ID}\"}"
+echo ""
+
+# 预期 : errorCode=400, 缺少必填参数 connectionId
+curl -s -X POST ${GATEWAY_URL}/api/db/disconnect \
+    -H "Content-Type: application/json" \
+    -d "{\"requestId\":\"req-d02-3\",\"sessionId\":\"${SESSION_ID}\"}"
+echo ""
+
+# ==================== 存储子服务测试收尾 ====================
+
+echo "======== 存储子服务测试收尾 ========"
+# 退出存储子服务测试使用的会话, 避免遗留登录态
+curl -s -X POST ${GATEWAY_URL}/api/user/logout \
+    -H "Content-Type: application/json" \
+    -d "{\"requestId\":\"req-db-logout-0\",\"sessionId\":\"${SESSION_ID}\"}"
+echo ""
