@@ -111,3 +111,38 @@ target_include_directories(chat_excel_database_service_impl PUBLIC
 target_link_libraries(chat_excel_database_service_impl PUBLIC
     chat_excel_database_business
 )
+
+# =================================================================
+#                         生成可执行文件(服务层)
+# =================================================================
+
+# 数据库子服务可执行文件 : 服务器构建器 + 程序入口
+# 驱动实现源文件一并编译进可执行文件 : MySQL/SQLite 驱动通过文件级静态变量
+# 自注册到驱动工厂, 静态库链接时未引用的目标文件会被丢弃导致自注册不执行,
+# 直接编译进可执行文件保证驱动注册初始化必然运行
+add_executable(database_service
+    database_server.cpp
+    main.cc
+    driver/mysql_database_driver.cpp
+    driver/sqlite_database_driver.cpp
+)
+
+# 头文件搜索路径 :
+#   项目根目录 : 支持以 #include "svc_database_service/xxx.h" 方式导入
+target_include_directories(database_service PRIVATE
+    ${PROJECT_SOURCE_DIR}
+)
+
+# 链接依赖 :
+#   chat_excel_database_service_impl : RPC 接口实现层(传递链接 业务逻辑层/连接管理器/驱动层/
+#                                      数据库子服务 proto 生成代码/brpc 等)
+#   cpp_toolkit                     : database_server.cpp/main.cc 直接使用 ServerFactory/SvcWatcher/
+#                                      SvcProvider/logger, 依"不依赖间接导入"规则显式声明
+#   gflags                          : main.cc 直接使用 gflags 符号, 显式声明
+#   pthread                         : std::thread 服务监控线程
+target_link_libraries(database_service PRIVATE
+    chat_excel_database_service_impl
+    cpp_toolkit::cpp_toolkit
+    gflags
+    pthread
+)
