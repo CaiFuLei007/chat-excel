@@ -425,20 +425,20 @@ void FileServiceImpl::PreviewExcel(google::protobuf::RpcController* /*controller
             return;
         }
 
-        // 调用业务逻辑层预览 Excel 文件, 文件不存在时业务逻辑层抛出异常
+        // 调用业务逻辑层预览 Excel 文件, 文件不存在时业务逻辑层抛出异常,
+        // 预览的 Excel 数据由业务逻辑层通过数据库子服务获取并填充到 excel_data 中
+        proto::PreviewExcelResult* result = response->mutable_result();
         const FileInfo file_info = file_business_->PreviewExcel(request->request_id(),
                                                                 request->user_id(), request->file_id(),
                                                                 request->page_number(),
-                                                                request->page_size());
+                                                                request->page_size(),
+                                                                result->mutable_excel_data());
 
         // 将文件信息填充到响应结果中
-        proto::PreviewExcelResult* result = response->mutable_result();
         result->set_file_id(file_info.file_id);
         result->set_file_name(file_info.file_name);
         result->set_file_size(static_cast<int64_t>(file_info.file_size));
         result->set_file_ext(file_info.file_extension);
-        // TODO: 通过数据库子服务获取 Excel 文件的解析结果并填充 excel_data
-        //       (page_number 与 page_size 用于解析结果分页查询)
 
         // 成功仅设置成功错误码, 不添加成功的描述信息
         response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));

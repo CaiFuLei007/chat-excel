@@ -65,6 +65,17 @@ UserBusiness::Logout 需要增加删除用户所有数据库连接的操作
 
 同时需要在 main 主流程中添加对数据库子服务服务的关心
 
+## 8. 结合 数据库子服务 , 完善 文件子服务的 RPC 接口
+
+对于 Excel 数据上传接口 FileBusiness::UploadFileData :
+1. 完成 TODO , 通过数据库子服务将解析的 Excel 数据保存到数据库中 , 启动 RPC 请求的连接 ID 使用 Excel 数据库全局连接 ID "excel_connection" , 连接 ID 逻辑查看:/home/chat-excel/svc_database_service/connection_manager.cpp
+2. 数据库子服务 RPC 接口参考 : chat-excel/proto/database_service.proto
+
+对于 Excel 预览接口 FileBusiness::PreviewExcel :
+1. 完成 TODO , 通过数据库子服务, 从数据库中获取 Excel 文件 WorkSheet 数据表数据
+2. 数据库子服务 RPC 接口参考 : chat-excel/proto/database_service.proto
+
+
 ## 补充
 
 1. 对文件子服务中 fastdfs 的操作方式进行修改 , 统一使用 <cpptoolkit/fdfs.h> 封装的接口操作 fastdfs

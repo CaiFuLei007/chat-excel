@@ -10,7 +10,9 @@
 #include <brpc/controller.h>
 #include <cpp-toolkit/logger.h>
 #include <cpp-toolkit/util.h>
+#include <database_service.pb.h>
 #include <excel_parse_service.pb.h>
+#include <file_service.pb.h>
 #include "common/exception.h"
 // FastDFS 客户端头文件必须最后导入 : 其依赖的 fastcommon 头文件会向全局作用域
 // 定义 byte 等宏, 先行导入会破坏 fmt/boost 等后续头文件的解析
@@ -22,6 +24,7 @@ namespace file_service
 {
 
 namespace proto = ::chat_excel_proto::excel_parse_service;
+namespace db_proto = ::chat_excel_proto::database_service;
 
 namespace
 {
@@ -29,8 +32,18 @@ namespace
 // Excel 解析子服务名称, 用于从信道管理对象获取通信信道
 constexpr const char* kExcelParseServiceName = "ExcelParseService";
 
+// 数据库子服务名称, 用于从信道管理对象获取通信信道
+constexpr const char* kDatabaseServiceName = "DataBaseService";
+
+// Excel 数据库全局连接 ID, 数据库子服务启动时创建并登记该全局连接,
+// Excel 解析数据的保存与预览查询均通过该连接进行
+constexpr const char* kExcelDbConnectionId = "excel_connection";
+
 // Excel 解析子服务 RPC 调用超时时间(毫秒), Excel 解析耗时较长, 设置 30 秒
 constexpr int kExcelParseRpcTimeoutMs = 30 * 1000;
+
+// 数据库子服务 RPC 调用超时时间(毫秒), Excel 数据导入耗时较长, 设置 30 秒
+constexpr int kDatabaseRpcTimeoutMs = 30 * 1000;
 
 /**
  * @brief 清洗表名中的非法字符, 字母/数字/汉字/下划线原样保留, 其余字符替换为下划线
@@ -205,6 +218,121 @@ std::vector<proto::WorksheetData> ParseWorksheetsFromRpc(
     return worksheet_datas;
 }
 
+/**
+ * @brief 调用数据库子服务 RPC 接口, 将解析的 WorkSheet 数据导入到指定数据库表中
+ * @param channel_manager RPC 信道管理对象
+ * @param request_id 请求 ID, 用于日志链路追踪
+ * @param connection_id 数据库连接 ID
+ * @param table_name 数据存储的数据库表名称
+ * @param worksheet_data 解析后的 WorkSheet 数据(包括表头, 列信息, worksheet 数据)
+ */
+void ImportWorksheetDataToDatabase(const cpp_toolkit::ChannelManager::Ptr& channel_manager,
+                                   const std::string& request_id, const std::string& connection_id,
+                                   const std::string& table_name,
+                                   const proto::WorksheetData& worksheet_data)
+{
+    // 通过信道管理对象获取数据库子服务通信信道
+    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(kDatabaseServiceName);
+    if (channel == nullptr)
+    {
+        ERR("获取数据库子服务信道失败, request_id: {}, 服务名称: {}",
+            request_id, kDatabaseServiceName);
+        throw ChatExcelException(ErrorCode::FILE_DATABASE_RPC_ERROR);
+    }
+
+    // 构建 RPC 请求并同步调用导入 Excel 数据接口
+    db_proto::ImportExcelDataRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_db_connect_id(connection_id);
+    rpc_request.set_table_name(table_name);
+    *rpc_request.mutable_worksheet_data() = worksheet_data;
+
+    db_proto::DatabaseService_Stub database_service_stub(channel.get());
+    brpc::Controller controller;
+    controller.set_timeout_ms(kDatabaseRpcTimeoutMs);
+    db_proto::ImportExcelDataResponse rpc_response;
+    database_service_stub.ImportExcelData(&controller, &rpc_request, &rpc_response, nullptr);
+
+    // 检测 RPC 调用是否成功(网络/超时/信道层面的失败)
+    if (controller.Failed())
+    {
+        ERR("数据库子服务 RPC 调用失败, request_id: {}, table_name: {}, 错误信息: {}",
+            request_id, table_name, controller.ErrorText());
+        throw ChatExcelException(ErrorCode::FILE_DATABASE_RPC_ERROR);
+    }
+
+    // 检测数据库子服务业务处理结果, 业务错误码透传给上层调用方
+    if (rpc_response.error_code() != static_cast<int>(ErrorCode::SUCCESS))
+    {
+        ERR("导入 Excel 数据失败, request_id: {}, table_name: {}, 错误码: {}, 错误信息: {}",
+            request_id, table_name, rpc_response.error_code(), rpc_response.error_msg());
+        throw ChatExcelException(static_cast<ErrorCode>(rpc_response.error_code()));
+    }
+
+    INFO("导入 Excel 数据成功, request_id: {}, table_name: {}, 导入行数: {}",
+         request_id, table_name, rpc_response.result().imported_rows());
+}
+
+/**
+ * @brief 调用数据库子服务 RPC 接口, 获取数据表的表结构与分页表数据
+ * @param channel_manager RPC 信道管理对象
+ * @param request_id 请求 ID, 用于日志链路追踪
+ * @param connection_id 数据库连接 ID
+ * @param table_name 数据表名称
+ * @param page_number 页码, 从 1 开始
+ * @param page_size 每页行数, 从 1 开始
+ * @return 表结构信息(列信息与当前页表数据)
+ */
+db_proto::TableSchemaInfo GetTableDataFromDatabase(
+    const cpp_toolkit::ChannelManager::Ptr& channel_manager, const std::string& request_id,
+    const std::string& connection_id, const std::string& table_name, int page_number,
+    int page_size)
+{
+    // 通过信道管理对象获取数据库子服务通信信道
+    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(kDatabaseServiceName);
+    if (channel == nullptr)
+    {
+        ERR("获取数据库子服务信道失败, request_id: {}, 服务名称: {}",
+            request_id, kDatabaseServiceName);
+        throw ChatExcelException(ErrorCode::FILE_DATABASE_RPC_ERROR);
+    }
+
+    // 构建 RPC 请求并同步调用获取表数据接口
+    db_proto::GetTableDataRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_db_connect_id(connection_id);
+    rpc_request.set_table_name(table_name);
+    rpc_request.set_page_number(page_number);
+    rpc_request.set_page_size(page_size);
+
+    db_proto::DatabaseService_Stub database_service_stub(channel.get());
+    brpc::Controller controller;
+    controller.set_timeout_ms(kDatabaseRpcTimeoutMs);
+    db_proto::GetTableDataResponse rpc_response;
+    database_service_stub.GetTableData(&controller, &rpc_request, &rpc_response, nullptr);
+
+    // 检测 RPC 调用是否成功(网络/超时/信道层面的失败)
+    if (controller.Failed())
+    {
+        ERR("数据库子服务 RPC 调用失败, request_id: {}, table_name: {}, 错误信息: {}",
+            request_id, table_name, controller.ErrorText());
+        throw ChatExcelException(ErrorCode::FILE_DATABASE_RPC_ERROR);
+    }
+
+    // 检测数据库子服务业务处理结果, 业务错误码透传给上层调用方
+    if (rpc_response.error_code() != static_cast<int>(ErrorCode::SUCCESS))
+    {
+        ERR("获取表数据失败, request_id: {}, table_name: {}, 错误码: {}, 错误信息: {}",
+            request_id, table_name, rpc_response.error_code(), rpc_response.error_msg());
+        throw ChatExcelException(static_cast<ErrorCode>(rpc_response.error_code()));
+    }
+
+    INFO("获取表数据成功, request_id: {}, table_name: {}, 当前页: {}, 总页数: {}",
+         request_id, table_name, rpc_response.result().table_schema().table_data().current_page(),
+         rpc_response.result().table_schema().table_data().total_pages());
+    return rpc_response.result().table_schema();
+}
+
 } // namespace
 
 FileBusiness::FileBusiness(std::shared_ptr<FileData> file_data,
@@ -290,18 +418,21 @@ void FileBusiness::UploadFileData(const std::string& request_id, const std::stri
     const std::vector<proto::WorksheetData> worksheet_datas =
         ParseWorksheetsFromRpc(channel_manager_, request_id, fastdfs_file_id, worksheet_names);
 
-    // TODO: 通过数据库子服务将解析的 Excel 数据保存到数据库中,
-    //       表名称使用 {file_id}_{worksheet_name}
-
-    // 基于解析结果生成数据库表名称, 构建 WorkSheet 信息保存到 WorkSheet 表
+    // 通过数据库子服务将解析的 Excel 数据保存到数据库中, 使用 Excel 数据库全局连接,
+    // 表名称使用 {file_id}_{worksheet_name}; 同时基于解析结果生成数据库表名称,
+    // 构建 WorkSheet 信息保存到 WorkSheet 表
     std::vector<WorkSheetInfo> worksheet_list;
     worksheet_list.reserve(worksheet_datas.size());
     for (const proto::WorksheetData& worksheet_data : worksheet_datas)
     {
+        const std::string table_name = GenerateTableName(file_info.file_id, worksheet_data.name());
+        ImportWorksheetDataToDatabase(channel_manager_, request_id, kExcelDbConnectionId,
+                                      table_name, worksheet_data);
+
         WorkSheetInfo worksheet_info;
         worksheet_info.file_id = file_info.file_id;
         worksheet_info.worksheet_name = worksheet_data.name();
-        worksheet_info.table_name = GenerateTableName(file_info.file_id, worksheet_data.name());
+        worksheet_info.table_name = table_name;
         worksheet_list.push_back(std::move(worksheet_info));
     }
     worksheet_data_->SaveWorkSheets(file_info.file_id, worksheet_list);
@@ -378,18 +509,48 @@ std::vector<FileInfo> FileBusiness::GetFileList(const std::string& request_id,
 }
 
 FileInfo FileBusiness::PreviewExcel(const std::string& request_id, const std::string& user_id,
-                                    const std::string& file_id, int page_number, int page_size)
+                                    const std::string& file_id, int page_number, int page_size,
+                                    file_proto::ExcelData* excel_data)
 {
     // 获取文件信息并校验文件属主
     const FileInfo file_info = GetFileInfoWithOwnerCheck(request_id, user_id, file_id);
 
-    // TODO: 通过数据库子服务, 从数据库中获取 Excel 文件的解析结果
-    //       (page_number 与 page_size 用于解析结果分页查询)
-    (void)page_number;
-    (void)page_size;
+    // 获取文件对应的所有 WorkSheet 信息(读策略 Cache-Aside)
+    const std::vector<WorkSheetInfo> worksheet_list =
+        GetWorkSheetsWithCache(request_id, file_info.file_id);
 
-    INFO("预览 Excel 文件成功(解析结果获取暂未实现), request_id: {}, file_id: {}",
-         request_id, file_id);
+    // 通过数据库子服务, 从数据库中获取每个 WorkSheet 数据表的分页表数据
+    // (使用 Excel 数据库全局连接, 分页参数透传给数据库子服务)
+    for (const WorkSheetInfo& worksheet_info : worksheet_list)
+    {
+        const db_proto::TableSchemaInfo table_schema = GetTableDataFromDatabase(
+            channel_manager_, request_id, kExcelDbConnectionId, worksheet_info.table_name,
+            page_number, page_size);
+
+        // 将表结构与表数据转换为预览结果中的 Sheet 结构
+        file_proto::Sheet* sheet = excel_data->add_sheets();
+        sheet->set_name(worksheet_info.worksheet_name);
+        sheet->set_col_count(static_cast<int32_t>(table_schema.column_info().size()));
+        for (const db_proto::ColumnInfo& column_info : table_schema.column_info())
+        {
+            sheet->add_columns(column_info.name());
+        }
+        for (const db_proto::Row& table_row : table_schema.table_data().rows())
+        {
+            file_proto::Row* sheet_row = sheet->add_data();
+            for (const std::string& cell : table_row.cells())
+            {
+                sheet_row->add_cells(cell);
+            }
+        }
+        sheet->set_total_rows(table_schema.table_data().total_rows());
+        sheet->set_current_page(table_schema.table_data().current_page());
+        sheet->set_total_pages(table_schema.table_data().total_pages());
+        sheet->set_page_size(table_schema.table_data().page_size());
+    }
+
+    INFO("预览 Excel 文件成功, request_id: {}, file_id: {}, worksheet 个数: {}",
+         request_id, file_id, worksheet_list.size());
     return file_info;
 }
 
@@ -446,6 +607,26 @@ void FileBusiness::HandleFileChatSessionMap(const std::string& request_id, const
          request_id, file_info.file_id, chat_session_id);
 }
 
+std::vector<WorkSheetInfo> FileBusiness::GetWorkSheetsWithCache(const std::string& request_id,
+                                                                const std::string& file_id)
+{
+    // 读策略(Cache-Aside): 先从缓存中读取 WorkSheet 信息
+    std::vector<WorkSheetInfo> worksheet_list =
+        worksheet_data_->GetWorkSheetListByFileIdFromCache(file_id);
+    if (worksheet_list.empty())
+    {
+        // 缓存未命中, 到 MySQL 中读取 WorkSheet 信息并回填缓存
+        worksheet_list = worksheet_data_->GetWorkSheetListByFileId(file_id);
+        if (!worksheet_list.empty())
+        {
+            worksheet_data_->SaveWorkSheetToCache(file_id, worksheet_list);
+        }
+    }
+    DBG("获取 WorkSheet 信息成功, request_id: {}, file_id: {}, worksheet 个数: {}",
+        request_id, file_id, worksheet_list.size());
+    return worksheet_list;
+}
+
 std::vector<std::string> FileBusiness::GetWorksheetDBTables(const std::string& request_id,
                                                             const std::string& user_id,
                                                             const std::string& file_id)
@@ -453,18 +634,9 @@ std::vector<std::string> FileBusiness::GetWorksheetDBTables(const std::string& r
     // 获取文件信息并校验文件属主
     const FileInfo file_info = GetFileInfoWithOwnerCheck(request_id, user_id, file_id);
 
-    // 读策略(Cache-Aside): 先从缓存中读取 WorkSheet 信息
-    std::vector<WorkSheetInfo> worksheet_list =
-        worksheet_data_->GetWorkSheetListByFileIdFromCache(file_info.file_id);
-    if (worksheet_list.empty())
-    {
-        // 缓存未命中, 到 MySQL 中读取 WorkSheet 信息并回填缓存
-        worksheet_list = worksheet_data_->GetWorkSheetListByFileId(file_info.file_id);
-        if (!worksheet_list.empty())
-        {
-            worksheet_data_->SaveWorkSheetToCache(file_info.file_id, worksheet_list);
-        }
-    }
+    // 获取文件对应的所有 WorkSheet 信息(读策略 Cache-Aside)
+    const std::vector<WorkSheetInfo> worksheet_list =
+        GetWorkSheetsWithCache(request_id, file_info.file_id);
 
     // 提取每个 WorkSheet 数据存储的数据库表名称
     std::vector<std::string> table_names;

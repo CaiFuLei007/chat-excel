@@ -10,7 +10,9 @@
 #include <cpp-toolkit/odb.h>
 #include <cpp-toolkit/rpc.h>
 #include <cpp-toolkit/redis.h>
+#include <database_service.pb.h>
 #include <excel_parse_service.pb.h>
+#include <file_service.pb.h>
 #include <gtest/gtest.h>
 #include <odb/database.hxx>
 #include <odb/transaction.hxx>
@@ -35,12 +37,22 @@ namespace
 
 // proto 生成类型命名空间别名
 namespace proto = ::chat_excel_proto::excel_parse_service;
+namespace db_proto = ::chat_excel_proto::database_service;
 
 // mock Excel 解析子服务监听端口
 constexpr int kExcelParseMockServerPort = 28992;
 
 // Excel 解析子服务名称(与 FileBusiness 实现中的常量保持一致)
 constexpr const char* kExcelParseServiceName = "ExcelParseService";
+
+// mock 数据库子服务监听端口
+constexpr int kDatabaseMockServerPort = 28993;
+
+// 数据库子服务名称(与 FileBusiness 实现中的常量保持一致)
+constexpr const char* kDatabaseServiceName = "DataBaseService";
+
+// Excel 数据库全局连接 ID(与数据库子服务连接管理器中的全局连接 ID 保持一致)
+constexpr const char* kExcelDbConnectionId = "excel_connection";
 
 // FastDFS tracker 服务器地址(本地 docker 容器)
 constexpr const char* kFdfsTrackerAddr = "127.0.0.1:22122";
@@ -222,6 +234,99 @@ const std::string& GetExcelParseMockServerAddr()
 }
 
 /**
+ * @brief mock 数据库子服务 : 校验业务层使用 Excel 数据库全局连接,
+ *        ImportExcelData 返回导入行数, GetTableData 返回与 mock Excel
+ *        解析结果一致的表结构与分页表数据, 其余接口使用基类默认实现
+ */
+class MockDatabaseServiceImpl : public db_proto::DatabaseService
+{
+public:
+    void ImportExcelData(google::protobuf::RpcController* /*controller*/,
+                         const db_proto::ImportExcelDataRequest* request,
+                         db_proto::ImportExcelDataResponse* response,
+                         google::protobuf::Closure* done) override
+    {
+        brpc::ClosureGuard closure_guard(done);
+        response->set_request_id(request->request_id());
+
+        // 校验业务层使用 Excel 数据库全局连接, 且表名称包含 {file_id}_{worksheet_name} 的分隔下划线
+        if (request->db_connect_id() != kExcelDbConnectionId)
+        {
+            response->set_error_code(static_cast<int>(ErrorCode::DB_SERVICE_CONNECTION_ID_EMPTY));
+            response->set_error_msg("mock: 数据库连接 ID 非 Excel 全局连接");
+            return;
+        }
+        if (request->table_name().empty() || request->table_name().find('_') == std::string::npos)
+        {
+            response->set_error_code(static_cast<int>(ErrorCode::DB_IDENTIFIER_INVALID));
+            response->set_error_msg("mock: 表名非法");
+            return;
+        }
+
+        response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
+        response->mutable_result()->set_table_name(request->table_name());
+        response->mutable_result()->set_imported_rows(
+            static_cast<int32_t>(request->worksheet_data().rows_size()));
+    }
+
+    void GetTableData(google::protobuf::RpcController* /*controller*/,
+                      const db_proto::GetTableDataRequest* request,
+                      db_proto::GetTableDataResponse* response,
+                      google::protobuf::Closure* done) override
+    {
+        brpc::ClosureGuard closure_guard(done);
+        response->set_request_id(request->request_id());
+
+        // 校验业务层使用 Excel 数据库全局连接
+        if (request->db_connect_id() != kExcelDbConnectionId)
+        {
+            response->set_error_code(static_cast<int>(ErrorCode::DB_SERVICE_CONNECTION_ID_EMPTY));
+            response->set_error_msg("mock: 数据库连接 ID 非 Excel 全局连接");
+            return;
+        }
+
+        // 返回与 mock Excel 解析结果一致的表结构(2 列)与分页表数据(1 行)
+        response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
+        db_proto::TableSchemaInfo* table_schema = response->mutable_result()->mutable_table_schema();
+        db_proto::ColumnInfo* name_column = table_schema->add_column_info();
+        name_column->set_name("名称");
+        name_column->set_type("String");
+        db_proto::ColumnInfo* count_column = table_schema->add_column_info();
+        count_column->set_name("数量");
+        count_column->set_type("Integer");
+
+        db_proto::TableData* table_data = table_schema->mutable_table_data();
+        db_proto::Row* row = table_data->add_rows();
+        row->add_cells("apple");
+        row->add_cells("10");
+        table_data->set_total_rows(1);
+        table_data->set_current_page(request->page_number());
+        table_data->set_total_pages(1);
+        table_data->set_page_size(request->page_size());
+    }
+};
+
+/**
+ * @brief 获取 mock 数据库子服务监听地址, 服务器进程内只启动一次
+ * @return "ip:port" 格式的监听地址字符串
+ */
+const std::string& GetDatabaseMockServerAddr()
+{
+    static const std::string server_addr = [] {
+        static MockDatabaseServiceImpl database_service_impl;
+        static brpc::Server server;
+        brpc::ServerOptions server_options;
+        server.AddService(&database_service_impl, brpc::SERVER_DOESNT_OWN_SERVICE);
+        if (server.Start(kDatabaseMockServerPort, &server_options) != 0)
+        {
+            GTEST_LOG_(FATAL) << "mock 数据库子服务启动失败, 端口: " << kDatabaseMockServerPort;
+        }
+        return "127.0.0.1:" + std::to_string(kDatabaseMockServerPort);
+    }();
+    return server_addr;
+}
+
+/**
  * @brief 断言业务调用抛出指定错误码的异常
  * @param call 业务调用 lambda
  * @param expected_code 期望的错误码
@@ -259,11 +364,13 @@ protected:
         // 初始化 FastDFS 客户端, 连接本地 docker 容器
         InitFdfsClient();
 
-        // 构建信道管理对象, 注册关心服务后添加 mock Excel 解析子服务地址
-        // (AddService 只对 SetCareService 预注册的关心服务生效)
+        // 构建信道管理对象, 注册关心服务后添加 mock Excel 解析子服务与
+        // mock 数据库子服务地址(AddService 只对 SetCareService 预注册的关心服务生效)
         channel_manager_ = std::make_shared<cpp_toolkit::ChannelManager>();
         channel_manager_->SetCareService(kExcelParseServiceName);
         channel_manager_->AddService(kExcelParseServiceName, GetExcelParseMockServerAddr());
+        channel_manager_->SetCareService(kDatabaseServiceName);
+        channel_manager_->AddService(kDatabaseServiceName, GetDatabaseMockServerAddr());
 
         // 构建文件业务逻辑对象, 依赖对象全部由外部注入
         const std::shared_ptr<FileData> file_data =
@@ -486,21 +593,44 @@ TEST_F(FileBusinessTest, GetFileListReturnsOnlyUserFiles)
     EXPECT_EQ(other_file_list.size(), 1u);
 }
 
-// 预览 Excel 文件 : 返回文件信息(解析结果获取暂未实现)
+// 预览 Excel 文件 : 通过数据库子服务返回文件信息与各工作表的表结构及分页表数据
 TEST_F(FileBusinessTest, PreviewExcelReturnsFileInfo)
 {
     const std::string file_id = UploadTestFileInfo();
-    const FileInfo file_info = file_business_->PreviewExcel(kRequestId, kTestUserId, file_id, 1, 10);
+    // 上传文件数据以产生 WorkSheet 元信息(mock 解析出 Sheet1 与 Sheet2 两个工作表)
+    file_business_->UploadFileData(kRequestId, kTestUserId, file_id, "content for preview test");
+
+    chat_excel_proto::file_service::ExcelData excel_data;
+    const FileInfo file_info =
+        file_business_->PreviewExcel(kRequestId, kTestUserId, file_id, 1, 10, &excel_data);
     EXPECT_EQ(file_info.file_id, file_id);
     EXPECT_EQ(file_info.file_name, "test_excel.xlsx");
+
+    // 校验预览数据 : 每个工作表对应一个 Sheet, 表头与数据来自数据库子服务
+    ASSERT_EQ(excel_data.sheets_size(), 2);
+    EXPECT_EQ(excel_data.sheets(0).name(), "Sheet1");
+    EXPECT_EQ(excel_data.sheets(0).columns_size(), 2);
+    EXPECT_EQ(excel_data.sheets(0).columns(0), "名称");
+    EXPECT_EQ(excel_data.sheets(0).columns(1), "数量");
+    EXPECT_EQ(excel_data.sheets(0).col_count(), 2);
+    ASSERT_EQ(excel_data.sheets(0).data_size(), 1);
+    EXPECT_EQ(excel_data.sheets(0).data(0).cells(0), "apple");
+    EXPECT_EQ(excel_data.sheets(0).data(0).cells(1), "10");
+    EXPECT_EQ(excel_data.sheets(0).total_rows(), 1);
+    EXPECT_EQ(excel_data.sheets(0).current_page(), 1);
+    EXPECT_EQ(excel_data.sheets(0).total_pages(), 1);
+    EXPECT_EQ(excel_data.sheets(0).page_size(), 10);
+    EXPECT_EQ(excel_data.sheets(1).name(), "Sheet2");
 }
 
 // 预览 Excel 文件 : 当前用户与文件属主不一致时抛出异常
 TEST_F(FileBusinessTest, PreviewExcelOwnerMismatch)
 {
     const std::string file_id = UploadTestFileInfo();
+    chat_excel_proto::file_service::ExcelData excel_data;
     ExpectBusinessError(
-        [this, &file_id] { file_business_->PreviewExcel(kRequestId, kOtherUserId, file_id, 1, 10); },
+        [this, &file_id, &excel_data]
+        { file_business_->PreviewExcel(kRequestId, kOtherUserId, file_id, 1, 10, &excel_data); },
         ErrorCode::FILE_USER_MISMATCH);
 }
 

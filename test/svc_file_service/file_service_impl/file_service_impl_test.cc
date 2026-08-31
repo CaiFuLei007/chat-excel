@@ -10,6 +10,7 @@
 #include <cpp-toolkit/odb.h>
 #include <cpp-toolkit/redis.h>
 #include <cpp-toolkit/rpc.h>
+#include <database_service.pb.h>
 #include <excel_parse_service.pb.h>
 #include <gtest/gtest.h>
 #include <odb/database.hxx>
@@ -33,12 +34,22 @@ namespace
 
 // proto 生成代码命名空间别名
 namespace proto = ::chat_excel_proto::file_service;
+namespace db_proto = ::chat_excel_proto::database_service;
 
 // mock Excel 解析子服务监听端口(避开 file_business_test 使用的 28992 端口)
 constexpr int kExcelParseMockServerPort = 28993;
 
 // Excel 解析子服务名称(与 FileBusiness 实现中的常量保持一致)
 constexpr const char* kExcelParseServiceName = "ExcelParseService";
+
+// mock 数据库子服务监听端口(避开 file_business_test 与 mock Excel 解析子服务端口)
+constexpr int kDatabaseMockServerPort = 28994;
+
+// 数据库子服务名称(与 FileBusiness 实现中的常量保持一致)
+constexpr const char* kDatabaseServiceName = "DataBaseService";
+
+// Excel 数据库全局连接 ID(与数据库子服务连接管理器中的全局连接 ID 保持一致)
+constexpr const char* kExcelDbConnectionId = "excel_connection";
 
 // FastDFS tracker 服务器地址(本地 docker 容器)
 constexpr const char* kFdfsTrackerAddr = "127.0.0.1:22122";
@@ -215,6 +226,97 @@ const std::string& GetExcelParseMockServerAddr()
     return server_addr;
 }
 
+/**
+ * @brief mock 数据库子服务 : 校验业务层使用 Excel 数据库全局连接,
+ *        ImportExcelData 返回导入行数, GetTableData 返回与 mock Excel
+ *        解析结果一致的表结构与分页表数据, 其余接口使用基类默认实现
+ */
+class MockDatabaseServiceImpl : public db_proto::DatabaseService
+{
+public:
+    void ImportExcelData(google::protobuf::RpcController* /*controller*/,
+                         const db_proto::ImportExcelDataRequest* request,
+                         db_proto::ImportExcelDataResponse* response,
+                         google::protobuf::Closure* done) override
+    {
+        brpc::ClosureGuard closure_guard(done);
+        response->set_request_id(request->request_id());
+
+        // 校验业务层使用 Excel 数据库全局连接, 且表名称包含 {file_id}_{worksheet_name} 的分隔下划线
+        if (request->db_connect_id() != kExcelDbConnectionId)
+        {
+            response->set_error_code(static_cast<int>(ErrorCode::DB_SERVICE_CONNECTION_ID_EMPTY));
+            response->set_error_msg("mock: 数据库连接 ID 非 Excel 全局连接");
+            return;
+        }
+        if (request->table_name().empty() || request->table_name().find('_') == std::string::npos)
+        {
+            response->set_error_code(static_cast<int>(ErrorCode::DB_IDENTIFIER_INVALID));
+            response->set_error_msg("mock: 表名非法");
+            return;
+        }
+
+        response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
+        response->mutable_result()->set_table_name(request->table_name());
+        response->mutable_result()->set_imported_rows(
+            static_cast<int32_t>(request->worksheet_data().rows_size()));
+    }
+
+    void GetTableData(google::protobuf::RpcController* /*controller*/,
+                      const db_proto::GetTableDataRequest* request,
+                      db_proto::GetTableDataResponse* response,
+                      google::protobuf::Closure* done) override
+    {
+        brpc::ClosureGuard closure_guard(done);
+        response->set_request_id(request->request_id());
+
+        // 校验业务层使用 Excel 数据库全局连接
+        if (request->db_connect_id() != kExcelDbConnectionId)
+        {
+            response->set_error_code(static_cast<int>(ErrorCode::DB_SERVICE_CONNECTION_ID_EMPTY));
+            response->set_error_msg("mock: 数据库连接 ID 非 Excel 全局连接");
+            return;
+        }
+
+        // 返回与 mock Excel 解析结果一致的表结构(2 列)与分页表数据(1 行)
+        response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
+        db_proto::TableSchemaInfo* table_schema = response->mutable_result()->mutable_table_schema();
+        table_schema->add_column_info()->set_name("名称");
+        table_schema->mutable_column_info(0)->set_type("String");
+        table_schema->add_column_info()->set_name("数量");
+        table_schema->mutable_column_info(1)->set_type("Integer");
+
+        db_proto::TableData* table_data = table_schema->mutable_table_data();
+        db_proto::Row* row = table_data->add_rows();
+        row->add_cells("apple");
+        row->add_cells("10");
+        table_data->set_total_rows(1);
+        table_data->set_current_page(request->page_number());
+        table_data->set_total_pages(1);
+        table_data->set_page_size(request->page_size());
+    }
+};
+
+/**
+ * @brief 获取 mock 数据库子服务监听地址, 服务器进程内只启动一次
+ * @return "ip:port" 格式的监听地址字符串
+ */
+const std::string& GetDatabaseMockServerAddr()
+{
+    static const std::string server_addr = [] {
+        static MockDatabaseServiceImpl database_service_impl;
+        static brpc::Server server;
+        brpc::ServerOptions server_options;
+        server.AddService(&database_service_impl, brpc::SERVER_DOESNT_OWN_SERVICE);
+        if (server.Start(kDatabaseMockServerPort, &server_options) != 0)
+        {
+            GTEST_LOG_(FATAL) << "mock 数据库子服务启动失败, 端口: " << kDatabaseMockServerPort;
+        }
+        return "127.0.0.1:" + std::to_string(kDatabaseMockServerPort);
+    }();
+    return server_addr;
+}
+
 } // namespace
 
 // 文件子服务 RPC 接口实现类测试夹具, 每个用例执行前清理数据库与缓存中的测试数据,
@@ -235,11 +337,13 @@ protected:
         // 初始化 FastDFS 客户端, 连接本地 docker 容器
         InitFdfsClient();
 
-        // 构建信道管理对象, 注册关心服务后添加 mock Excel 解析子服务地址
-        // (AddService 只对 SetCareService 预注册的关心服务生效)
+        // 构建信道管理对象, 注册关心服务后添加 mock Excel 解析子服务与
+        // mock 数据库子服务地址(AddService 只对 SetCareService 预注册的关心服务生效)
         auto channel_manager = std::make_shared<cpp_toolkit::ChannelManager>();
         channel_manager->SetCareService(kExcelParseServiceName);
         channel_manager->AddService(kExcelParseServiceName, GetExcelParseMockServerAddr());
+        channel_manager->SetCareService(kDatabaseServiceName);
+        channel_manager->AddService(kDatabaseServiceName, GetDatabaseMockServerAddr());
 
         // 构建业务栈各层对象
         auto file_data = std::make_shared<FileData>(GetMysqlHandle(), GetRedisHandle());
@@ -536,10 +640,13 @@ TEST_F(FileServiceImplTest, DeleteFileWithOwnerMismatch)
 
 // ==================== 预览 Excel 文件测试 ====================
 
-// 正常情况: 预览返回文件信息, 解析结果暂未实现不填充 excel_data
+// 正常情况: 预览返回文件信息, excel_data 填充数据库子服务返回的工作表数据
 TEST_F(FileServiceImplTest, PreviewExcelSuccess)
 {
     const std::string file_id = CallUploadFileInfo("test_excel.xlsx", "xlsx");
+    // 上传文件数据以触发 Excel 解析与数据导入, 产生 WorkSheet 元信息
+    ASSERT_EQ(CallUploadFile(kTestUserId, file_id, kTestFileContent),
+              static_cast<int>(ErrorCode::SUCCESS));
 
     proto::PreviewExcelRequest request;
     request.set_request_id(kRequestId);
@@ -558,7 +665,24 @@ TEST_F(FileServiceImplTest, PreviewExcelSuccess)
     EXPECT_EQ(response.result().file_name(), "test_excel.xlsx");
     EXPECT_EQ(response.result().file_size(), 10 * 1024);
     EXPECT_EQ(response.result().file_ext(), "xlsx");
-    EXPECT_FALSE(response.result().has_excel_data());
+
+    // 校验 excel_data : 每个工作表对应一个 Sheet, 表头与数据来自数据库子服务
+    ASSERT_TRUE(response.result().has_excel_data());
+    ASSERT_EQ(response.result().excel_data().sheets_size(), 2);
+    const proto::Sheet& first_sheet = response.result().excel_data().sheets(0);
+    EXPECT_EQ(first_sheet.name(), "Sheet1");
+    EXPECT_EQ(first_sheet.columns_size(), 2);
+    EXPECT_EQ(first_sheet.columns(0), "名称");
+    EXPECT_EQ(first_sheet.columns(1), "数量");
+    EXPECT_EQ(first_sheet.col_count(), 2);
+    ASSERT_EQ(first_sheet.data_size(), 1);
+    EXPECT_EQ(first_sheet.data(0).cells(0), "apple");
+    EXPECT_EQ(first_sheet.data(0).cells(1), "10");
+    EXPECT_EQ(first_sheet.total_rows(), 1);
+    EXPECT_EQ(first_sheet.current_page(), 1);
+    EXPECT_EQ(first_sheet.total_pages(), 1);
+    EXPECT_EQ(first_sheet.page_size(), 50);
+    EXPECT_EQ(response.result().excel_data().sheets(1).name(), "Sheet2");
 }
 
 // 异常情况: 分页参数从 1 开始, 0 视为参数错误

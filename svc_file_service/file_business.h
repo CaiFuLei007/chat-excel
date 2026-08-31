@@ -6,6 +6,7 @@
 #include <cpp-toolkit/rpc.h>
 #include "data/file_data.h"
 #include "data/worksheet_data.h"
+#include "file_service.pb.h"
 #include "svc_file_service/common.h"
 
 namespace chat_excel
@@ -13,12 +14,16 @@ namespace chat_excel
 namespace file_service
 {
 
+// 文件子服务 proto 生成代码所在命名空间的别名, 简化预览接口签名
+namespace file_proto = ::chat_excel_proto::file_service;
+
 /**
  * @brief 文件业务逻辑类, 负责文件上传/下载/删除/查询等业务逻辑的组织与实现,
  *        组织文件信息缓存与 WorkSheet 缓存的读写时机(Cache-Aside 旁路缓存策略),
  *        文件二进制数据通过 FastDFS 客户端存储, Excel 解析通过 RPC 调用
  *        Excel 解析子服务完成, 数据库表名称由本层基于解析结果生成,
- *        格式为 {file_id}_{worksheet_name}
+ *        格式为 {file_id}_{worksheet_name},
+ *        Excel 数据的保存与预览查询通过 RPC 调用数据库子服务完成
  */
 class FileBusiness
 {
@@ -111,16 +116,19 @@ public:
     std::vector<FileInfo> GetFileList(const std::string& request_id, const std::string& user_id);
 
     /**
-     * @brief 预览 Excel 文件, 校验文件属主后返回文件信息, 解析结果从数据库子服务获取(暂未实现)
+     * @brief 预览 Excel 文件, 校验文件属主后通过数据库子服务获取文件每个
+     *        WorkSheet 数据表的表结构与分页表数据, 填充到 excel_data 中
      * @param request_id 请求 ID, 用于日志链路追踪
      * @param user_id 用户 ID
      * @param file_id 文件 ID
-     * @param page_number 预览数据页号(预留, 供数据库子服务分页查询使用)
-     * @param page_size 预览数据每页条数(预留, 供数据库子服务分页查询使用)
+     * @param page_number 预览数据页号, 从 1 开始
+     * @param page_size 预览数据每页条数, 从 1 开始
+     * @param excel_data 预览的 Excel 数据输出参数, 每个工作表对应一个 Sheet
      * @return 文件信息
      */
     FileInfo PreviewExcel(const std::string& request_id, const std::string& user_id,
-                          const std::string& file_id, int page_number, int page_size);
+                          const std::string& file_id, int page_number, int page_size,
+                          file_proto::ExcelData* excel_data);
 
     /**
      * @brief 上传 SQLite 文件数据, 实现逻辑与上传 Excel 文件相同(上传文件到
@@ -169,6 +177,17 @@ public:
                                                   const std::string& file_id);
 
 private:
+    /**
+     * @brief 获取文件对应的所有 WorkSheet 信息, 读策略(Cache-Aside):
+     *        先查 WorkSheet 缓存, 未命中时查数据库并回填缓存;
+     *        文件存在但没有 WorkSheet 信息时(如 SQLite 文件)返回空列表
+     * @param request_id 请求 ID, 用于日志链路追踪
+     * @param file_id 文件 ID
+     * @return WorkSheet 信息列表
+     */
+    std::vector<WorkSheetInfo> GetWorkSheetsWithCache(const std::string& request_id,
+                                                      const std::string& file_id);
+
     /**
      * @brief 获取文件信息并校验文件属主, 读策略(Cache-Aside): 先查缓存,
      *        未命中时查数据库并回填缓存; 文件不存在或属主不一致时抛出异常
