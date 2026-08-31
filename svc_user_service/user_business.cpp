@@ -7,6 +7,7 @@
 #include <brpc/controller.h>
 #include <cpp-toolkit/logger.h>
 #include <cpp-toolkit/util.h>
+#include <database_service.pb.h>
 #include <notify_service.pb.h>
 #include "common/exception.h"
 
@@ -17,6 +18,9 @@ namespace user_service
 
 // proto 生成代码所在命名空间的别名, 简化 RPC 类型引用
 namespace proto = ::chat_excel_proto::notify_service;
+
+// 数据库子服务 proto 生成代码所在命名空间的别名, 简化 RPC 类型引用
+namespace database_proto = ::chat_excel_proto::database_service;
 
 namespace
 {
@@ -47,6 +51,12 @@ constexpr const char* kNotifyServiceName = "NotifyService";
 
 // 通知子服务 RPC 调用超时时间(毫秒)
 constexpr int kNotifyRpcTimeoutMs = 3000;
+
+// 数据库子服务名称, 用于从信道管理对象获取数据库子服务通信信道
+constexpr const char* kDatabaseServiceName = "DataBaseService";
+
+// 数据库子服务 RPC 调用超时时间(毫秒)
+constexpr int kDatabaseRpcTimeoutMs = 3000;
 
 /**
  * @brief 获取线程本地的梅森旋转数生成器, thread_local 实例保证多线程并发调用时
@@ -348,6 +358,9 @@ void UserBusiness::Logout(const std::string& session_id)
     const std::string user_id = session_manager_->GetUserIdBySessionId(session_id);
     const UserInfo user_info = session_manager_->GetUserInfoByUserId(user_id);
 
+    // 调用数据库子服务删除该用户名下的所有数据库连接
+    DeleteUserAllDatabaseConn(user_id);
+
     // 将用户状态设置为下线, 更新 MySQL 并删除 Redis 用户缓存
     UpdateUserStatus(user_info, UserStatus::NOT_LOGGED_IN);
 
@@ -390,6 +403,47 @@ void UserBusiness::UpdateUserStatus(const UserInfo& user_info, UserStatus status
     // 更新 MySQL 中的用户信息, 删除 Redis 中的用户缓存, 数据库是唯一真数据源
     user_data_->UpdateUser(new_user_info);
     user_data_->DeleteUserFromCache(new_user_info);
+}
+
+void UserBusiness::DeleteUserAllDatabaseConn(const std::string& user_id)
+{
+    // 通过信道管理对象获取数据库子服务通信信道
+    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(kDatabaseServiceName);
+    if (channel == nullptr)
+    {
+        ERR("获取数据库子服务信道失败, 服务名称: {}, user_id: {}", kDatabaseServiceName, user_id);
+        throw ChatExcelException(ErrorCode::USER_DATABASE_RPC_ERROR);
+    }
+
+    // 构建删除用户所有数据库连接 RPC 请求, 请求 ID 使用 uuid 生成器生成用于链路追踪
+    database_proto::DeleteUserAllConnRequest rpc_request;
+    rpc_request.set_request_id(cpp_toolkit::UuidUtil::GenerateUuidV4());
+    rpc_request.set_user_id(user_id);
+
+    // 创建数据库子服务 RPC 客户端存根
+    database_proto::DatabaseService_Stub database_service_stub(channel.get());
+
+    // 设置 RPC 调用超时时间后同步发送 RPC 请求
+    brpc::Controller controller;
+    controller.set_timeout_ms(kDatabaseRpcTimeoutMs);
+    database_proto::DeleteUserAllConnResponse rpc_response;
+    database_service_stub.DeleteUserAllConn(&controller, &rpc_request, &rpc_response, nullptr);
+
+    // 检测 RPC 调用是否成功(网络/超时/信道层面的失败)
+    if (controller.Failed())
+    {
+        ERR("数据库子服务 RPC 调用失败, user_id: {}, 错误信息: {}", user_id, controller.ErrorText());
+        throw ChatExcelException(ErrorCode::USER_DATABASE_RPC_ERROR);
+    }
+
+    // 检测数据库子服务业务处理结果
+    if (rpc_response.error_code() != static_cast<int>(ErrorCode::SUCCESS))
+    {
+        ERR("数据库子服务删除用户所有连接失败, user_id: {}, 错误码: {}, 错误信息: {}",
+            user_id, rpc_response.error_code(), rpc_response.error_msg());
+        throw ChatExcelException(ErrorCode::USER_DATABASE_RPC_ERROR);
+    }
+    INFO("数据库子服务删除用户所有数据库连接成功, user_id: {}", user_id);
 }
 
 std::optional<UserInfo> UserBusiness::GetUserByNicknameWithCache(const std::string& nickname)

@@ -67,6 +67,9 @@ enum class ErrorCode : int
     // 通知子服务 RPC 调用失败(获取信道失败或调用超时/失败)
     USER_NOTIFY_RPC_ERROR = 117,
 
+    // 数据库子服务 RPC 调用失败(获取信道失败或调用超时/失败)
+    USER_DATABASE_RPC_ERROR = 118,
+
     // ==================== 文件子服务错误码范围 200 - 299 ====================
     // 保存文件信息到数据库失败
     FILE_SAVE_TO_MYSQL_ERROR = 200,

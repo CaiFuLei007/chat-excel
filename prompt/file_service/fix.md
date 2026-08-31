@@ -56,6 +56,15 @@
 1. 实现 FileBusiness::HandleFileChatSessionMap 方法 , 将 RPC 参数中的 session_id 设置到 file_id 对应的文件信息中 , 修改 MySQL 中的数据 , 同时删除 Redis 中的缓存
 2. 实现 FileServiceImpl::HandleFileChatSessionMap RPC 方法
 
+
+## 7. 对用户退出接口进行完善
+
+UserBusiness::Logout 需要增加删除用户所有数据库连接的操作
+1. 新增逻辑 : 调用数据库子服务的 RPC DeleteUserAllConn , 删除用户所有数据库连接
+2. 接口具体定义查看 : chat-excel/proto/database_service.proto
+
+同时需要在 main 主流程中添加对数据库子服务服务的关心
+
 ## 补充
 
 1. 对文件子服务中 fastdfs 的操作方式进行修改 , 统一使用 <cpptoolkit/fdfs.h> 封装的接口操作 fastdfs

@@ -69,7 +69,7 @@ DEFINE_string(service_name, "UserService", "用户子服务名称");
 DEFINE_string(service_addr, "127.0.0.1:8081", "用户子服务注册地址");
 
 // 需要监控的子服务名称列表(逗号分隔)
-DEFINE_string(care_service_names, "NotifyService", "需要监控的子服务名称列表(逗号分隔)");
+DEFINE_string(care_service_names, "NotifyService,DataBaseService", "需要监控的子服务名称列表(逗号分隔)");
 
 // 服务注册 TTL(秒)
 DEFINE_int32(registry_ttl, 10, "服务注册 TTL(秒)");

@@ -99,7 +99,8 @@ public:
     void DeleteVerifyCode(const std::string& verifycode_id);
 
     /**
-     * @brief 退出登录, 用户状态设置为下线, 更新 MySQL 并删除 Redis 用户缓存,
+     * @brief 退出登录, 调用数据库子服务删除用户所有数据库连接,
+     *        用户状态设置为下线, 更新 MySQL 并删除 Redis 用户缓存,
      *        删除当前会话
      * @param session_id 会话 ID
      */
@@ -137,6 +138,13 @@ private:
      * @param status 更新后的用户登录状态
      */
     void UpdateUserStatus(const UserInfo& user_info, UserStatus status);
+
+    /**
+     * @brief 调用数据库子服务 RPC DeleteUserAllConn, 删除用户名下的所有数据库连接,
+     *        退出登录时清理用户连接资源, 失败时抛出异常
+     * @param user_id 用户 ID
+     */
+    void DeleteUserAllDatabaseConn(const std::string& user_id);
 
     /**
      * @brief 通过用户昵称获取用户信息, 先读取缓存,

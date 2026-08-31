@@ -29,6 +29,7 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::USER_SERVICE_PARAMS_ERROR), "用户子服务请求参数错误"},
         {static_cast<int>(ErrorCode::USER_SERVICE_INTERNAL_ERROR), "用户子服务内部错误"},
         {static_cast<int>(ErrorCode::USER_NOTIFY_RPC_ERROR), "通知子服务 RPC 调用失败"},
+        {static_cast<int>(ErrorCode::USER_DATABASE_RPC_ERROR), "数据库子服务 RPC 调用失败"},
         {static_cast<int>(ErrorCode::FILE_SAVE_TO_MYSQL_ERROR), "保存文件信息到数据库失败"},
         {static_cast<int>(ErrorCode::FILE_UPDATE_IN_MYSQL_ERROR), "更新数据库中的文件信息失败"},
         {static_cast<int>(ErrorCode::FILE_GET_BY_FILE_ID_ERROR), "通过文件 ID 获取文件信息失败"},
