@@ -425,8 +425,8 @@ void DatabaseServiceImpl::GetTableStruct(google::protobuf::RpcController* /*cont
 
         // 调用业务逻辑层获取表结构, 失败时业务逻辑层抛出异常
         const std::string table_struct =
-            database_business_->GetTableStruct(request->request_id(),
-                                               request->db_connect_id(), request->table_name());
+            database_business_->GetTableStructure(request->request_id(),
+                                                  request->db_connect_id(), request->table_name());
 
         // 填充表结构描述, 成功无需添加成功描述信息
         response->set_table_struct(table_struct);

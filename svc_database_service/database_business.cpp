@@ -61,12 +61,20 @@ constexpr int32_t kDefaultPageSize = 50;
 // Excel 数据表自增主键列名
 constexpr char kImportPrimaryKeyColumn[] = "id";
 
-// MySQL 查询所有表名语句
-constexpr char kMySQLListTablesSql[] = "SHOW TABLES";
+// Excel 解析列类型 : 布尔类型
+constexpr const char* kExcelBooleanColumnType = "BOOLEAN";
 
-// SQLite 查询所有表名语句(排除 sqlite_sequence 等 SQLite 内部表)
-constexpr char kSQLiteListTablesSql[] =
-    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
+// 布尔真值的全部文本表示形式(忽略大小写匹配)
+const std::vector<std::string> kBooleanTrueTexts = {"true", "1", "t", "yes", "y"};
+
+// 布尔假值的全部文本表示形式(忽略大小写匹配)
+const std::vector<std::string> kBooleanFalseTexts = {"false", "0", "f", "no", "n"};
+
+// 布尔真值转换后的数据库存储值
+constexpr const char* kBooleanTrueValue = "1";
+
+// 布尔假值转换后的数据库存储值
+constexpr const char* kBooleanFalseValue = "0";
 
 /**
  * @brief 获取当前系统时间的毫秒时间戳
@@ -80,14 +88,42 @@ int64_t NowMilliseconds()
 }
 
 /**
- * @brief 获取行数据中指定下标的列值, 下标越界时返回空字符串
- * @param row 行数据集合
- * @param column_index 列下标
- * @return 指定下标的列值
+ * @brief 将 ASCII 字母统一转为小写, 用于布尔等文本的忽略大小写比较
+ * @param text 输入字符串
+ * @return 转换后的全小写字符串
  */
-std::string ColumnValue(const std::vector<std::string>& row, size_t column_index)
+std::string ToLowerAscii(const std::string& text)
 {
-    return column_index < row.size() ? row[column_index] : std::string();
+    std::string lower_text = text;
+    std::transform(lower_text.begin(), lower_text.end(), lower_text.begin(),
+                   [](unsigned char character)
+                   {
+                       return static_cast<char>(std::tolower(character));
+                   });
+    return lower_text;
+}
+
+/**
+ * @brief 将 BOOLEAN 列的单元格文本转换为数据库存储值 : 真值文本(忽略大小写)
+ *        转换为 "1", 假值文本转换为 "0", 无法识别的文本原样返回
+ * @param cell_value BOOLEAN 列的单元格文本
+ * @return 转换后的数据库存储值
+ */
+std::string ConvertBooleanCellValue(const std::string& cell_value)
+{
+    // 统一转小写后与真值/假值文本集合比较
+    const std::string lower_value = ToLowerAscii(cell_value);
+    if (std::find(kBooleanTrueTexts.begin(), kBooleanTrueTexts.end(), lower_value) !=
+        kBooleanTrueTexts.end())
+    {
+        return kBooleanTrueValue;
+    }
+    if (std::find(kBooleanFalseTexts.begin(), kBooleanFalseTexts.end(), lower_value) !=
+        kBooleanFalseTexts.end())
+    {
+        return kBooleanFalseValue;
+    }
+    return cell_value;
 }
 
 } // namespace
@@ -193,8 +229,8 @@ database_proto::TableSchemaInfo DatabaseBusiness::GetTableData(const std::string
     // 确定实际查询的表名 : 存在临时表且未强制查原表时查询临时表, 展示修改类 SQL 的执行效果
     std::string query_table_name = ResolveQueryTableName(connection_id, table_name, force_original);
 
-    // 查询表结构信息(列名与列类型)
-    TableInfo table_info = QueryTableSchema(driver, query_table_name);
+    // 查询表结构信息(列名与列类型), 直接调用驱动层的 GetTableStructure 接口
+    TableInfo table_info = driver->GetTableStructure(query_table_name);
 
     // 查询总行数
     QueryResult count_result =
@@ -269,9 +305,9 @@ QueryResult DatabaseBusiness::ExecuteSql(const std::string& request_id,
     return ExecuteModifySqlWithTempTable(driver, request_id, connection_id, sql);
 }
 
-std::string DatabaseBusiness::GetTableStruct(const std::string& request_id,
-                                             const std::string& connection_id,
-                                             const std::string& table_name)
+std::string DatabaseBusiness::GetTableStructure(const std::string& request_id,
+                                                const std::string& connection_id,
+                                                const std::string& table_name)
 {
     std::shared_ptr<DatabaseDriver> driver = GetDriverByConnectionId(request_id, connection_id);
 
@@ -282,8 +318,8 @@ std::string DatabaseBusiness::GetTableStruct(const std::string& request_id,
         throw ChatExcelException(ErrorCode::DB_IDENTIFIER_INVALID);
     }
 
-    // 查询原表的表结构信息(临时表与原表结构一致)
-    TableInfo table_info = QueryTableSchema(driver, table_name);
+    // 查询原表的表结构信息(临时表与原表结构一致), 直接调用驱动层的 GetTableStructure 接口
+    TableInfo table_info = driver->GetTableStructure(table_name);
 
     // 组装 JSON 格式的表结构描述
     Json::Value table_struct_json;
@@ -671,25 +707,8 @@ std::shared_ptr<DatabaseDriver> DatabaseBusiness::GetDriverByConnectionId(
 std::vector<std::string> DatabaseBusiness::ListAllTables(
     const std::shared_ptr<DatabaseDriver>& driver) const
 {
-    // 根据数据库类型选择查询表名语句
-    const char* list_tables_sql =
-        driver->GetDatabaseType() == DatabaseType::MYSQL ? kMySQLListTablesSql : kSQLiteListTablesSql;
-
-    QueryResult result = driver->ExecuteQuery(list_tables_sql);
-    if (!result.IsSuccess())
-    {
-        ERR("查询数据库表列表失败, 错误: {}", result.GetErrorMessage());
-        throw ChatExcelException(ErrorCode::DB_EXECUTE_FAILED);
-    }
-
-    // 表名位于查询结果的第一列
-    std::vector<std::string> tables;
-    tables.reserve(result.GetRowCount());
-    for (size_t row_index = 0; row_index < result.GetRowCount(); ++row_index)
-    {
-        tables.push_back(result.GetRow(row_index)[0]);
-    }
-    return tables;
+    // 直接调用驱动层接口获取所有表名, 数据库方言差异由各驱动自行处理
+    return driver->GetAllTablesName();
 }
 
 bool DatabaseBusiness::IsTableExists(const std::shared_ptr<DatabaseDriver>& driver,
@@ -697,59 +716,6 @@ bool DatabaseBusiness::IsTableExists(const std::shared_ptr<DatabaseDriver>& driv
 {
     std::vector<std::string> all_tables = ListAllTables(driver);
     return std::find(all_tables.begin(), all_tables.end(), table_name) != all_tables.end();
-}
-
-TableInfo DatabaseBusiness::QueryTableSchema(const std::shared_ptr<DatabaseDriver>& driver,
-                                             const std::string& table_name) const
-{
-    // 根据数据库类型选择查询表结构语句
-    bool is_mysql = driver->GetDatabaseType() == DatabaseType::MYSQL;
-    QueryResult result;
-    if (is_mysql)
-    {
-        // MySQL DESC 结果列 : Field, Type, Null, Key, Default, Extra
-        result = driver->ExecuteQuery("DESC " + driver->QuoteIdentifier(table_name));
-    }
-    else
-    {
-        // SQLite PRAGMA table_info 结果列 : cid, name, type, notnull, dflt_value, pk
-        result = driver->ExecuteQuery("PRAGMA table_info(" + driver->QuoteIdentifier(table_name) + ")");
-    }
-    if (!result.IsSuccess())
-    {
-        ERR("查询表结构失败, table_name: {}, 错误: {}", table_name, result.GetErrorMessage());
-        throw ChatExcelException(ErrorCode::DB_EXECUTE_FAILED);
-    }
-
-    // 按数据库方言解析表结构行数据
-    TableInfo table_info;
-    table_info.name = table_name;
-    for (size_t row_index = 0; row_index < result.GetRowCount(); ++row_index)
-    {
-        const std::vector<std::string>& row = result.GetRow(row_index);
-        ColumnInfo column_info;
-        if (is_mysql)
-        {
-            column_info.name = ColumnValue(row, 0);            // Field
-            column_info.type = ColumnValue(row, 1);            // Type
-            column_info.nullable = ColumnValue(row, 2) == "YES";   // Null
-            column_info.is_primary_key = ColumnValue(row, 3) == "PRI"; // Key
-            column_info.default_value = ColumnValue(row, 4);   // Default
-            // Extra 中包含 auto_increment 表示自增列
-            column_info.auto_increment =
-                ColumnValue(row, 5).find("auto_increment") != std::string::npos;
-        }
-        else
-        {
-            column_info.name = ColumnValue(row, 1);                        // name
-            column_info.type = ColumnValue(row, 2);                        // type
-            column_info.nullable = ColumnValue(row, 3) == "0";             // notnull
-            column_info.default_value = ColumnValue(row, 4);               // dflt_value
-            column_info.is_primary_key = ColumnValue(row, 5) != "0";       // pk
-        }
-        table_info.columns.push_back(std::move(column_info));
-    }
-    return table_info;
 }
 
 std::string DatabaseBusiness::ResolveQueryTableName(const std::string& connection_id,
@@ -1087,8 +1053,10 @@ void DatabaseBusiness::CreateImportTable(const std::shared_ptr<DatabaseDriver>& 
         (is_mysql ? " BIGINT PRIMARY KEY AUTO_INCREMENT" : " INTEGER PRIMARY KEY AUTOINCREMENT");
     for (const excel_parse_proto::ProtoColumnInfo& column_info : worksheet_data.columns())
     {
-        // 列类型由 Excel 解析子服务给出 : TEXT/BIGINT/DOUBLE/BOOLEAN/DATE
-        create_sql += ", " + driver->QuoteIdentifier(column_info.name()) + " " + column_info.type();
+        // 列类型由 Excel 解析子服务给出 : TEXT/BIGINT/DOUBLE/BOOLEAN/DATE,
+        // 通过驱动层接口转化为数据库列类型(BOOLEAN 转为整型, DATE 转为文本)
+        create_sql += ", " + driver->QuoteIdentifier(column_info.name()) + " " +
+                      driver->ConvertExcelColumnType(column_info.type());
     }
     create_sql += ")";
     if (is_mysql)
@@ -1125,6 +1093,15 @@ int32_t DatabaseBusiness::ImportWorksheetRows(const std::shared_ptr<DatabaseDriv
     }
     insert_sql += ") VALUES (" + placeholders + ")";
 
+    // 标记 BOOLEAN 类型列, 行数据导入时需要将布尔文本转换为 0/1 后再绑定;
+    // DATE 列的值保持文本形式, 直接绑定到 TEXT 类型列
+    std::vector<bool> is_boolean_column(static_cast<size_t>(column_count), false);
+    for (int column_index = 0; column_index < column_count; ++column_index)
+    {
+        is_boolean_column[static_cast<size_t>(column_index)] =
+            worksheet_data.columns(column_index).type() == kExcelBooleanColumnType;
+    }
+
     // 批量导入数据, 每批 kImportBatchSize 条一个事务, 某批失败时回滚当前批并返回已导入行数
     int32_t imported_rows = 0;
     const int total_rows = worksheet_data.rows_size();
@@ -1153,7 +1130,16 @@ int32_t DatabaseBusiness::ImportWorksheetRows(const std::shared_ptr<DatabaseDriv
                 if (column_index < row_data.cells_size() &&
                     !row_data.cells(column_index).value().empty())
                 {
-                    parameters.emplace_back(row_data.cells(column_index).value());
+                    // BOOLEAN 列的文本值转换为 0/1 后再绑定
+                    if (is_boolean_column[static_cast<size_t>(column_index)])
+                    {
+                        parameters.emplace_back(
+                            ConvertBooleanCellValue(row_data.cells(column_index).value()));
+                    }
+                    else
+                    {
+                        parameters.emplace_back(row_data.cells(column_index).value());
+                    }
                 }
                 else
                 {

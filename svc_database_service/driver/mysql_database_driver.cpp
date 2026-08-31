@@ -8,6 +8,7 @@
 #include <cpp-toolkit/logger.h>
 
 #include "common/exception.h"
+#include "svc_database_service/driver/sql_validator.h"
 
 namespace chat_excel
 {
@@ -20,6 +21,24 @@ constexpr unsigned long kInitialColumnBufferLength = 256;
 
 // MySQL 连接使用的字符集
 constexpr const char* kMySQLCharset = "utf8mb4";
+
+// MySQL 查询所有表名语句
+constexpr const char* kMySQLListTablesSql = "SHOW TABLES";
+
+// MySQL DESC 结果 Extra 列中标识自增列的关键字
+constexpr const char* kMySQLAutoIncrementKeyword = "auto_increment";
+
+// MySQL 布尔列类型(Excel BOOLEAN 类型转化后的类型)
+constexpr const char* kMySQLBooleanColumnType = "INT";
+
+// MySQL 文本列类型(Excel DATE 类型转化后的类型)
+constexpr const char* kMySQLDateColumnType = "TEXT";
+
+// Excel 解析列类型 : 布尔类型
+constexpr const char* kExcelBooleanColumnType = "BOOLEAN";
+
+// Excel 解析列类型 : 日期类型
+constexpr const char* kExcelDateColumnType = "DATE";
 
 /**
  * @brief MYSQL_RES 结果集守护类, 作用域结束时自动释放结果集
@@ -384,6 +403,80 @@ std::string MySQLDatabaseDriver::QuoteIdentifier(const std::string& identifier) 
     }
     quoted.push_back('`');
     return quoted;
+}
+
+std::vector<std::string> MySQLDatabaseDriver::GetAllTablesName()
+{
+    CheckConnected(is_connected_);
+    QueryResult result = ExecuteQuery(kMySQLListTablesSql);
+    if (!result.IsSuccess())
+    {
+        ERR("MySQL 查询所有表名失败, 错误: {}", result.GetErrorMessage());
+        throw ChatExcelException(ErrorCode::DB_EXECUTE_FAILED);
+    }
+
+    // SHOW TABLES 结果集中表名位于第一列
+    std::vector<std::string> table_names;
+    table_names.reserve(result.GetRowCount());
+    for (size_t row_index = 0; row_index < result.GetRowCount(); ++row_index)
+    {
+        table_names.push_back(result.GetRow(row_index)[0]);
+    }
+    INFO("MySQL 查询所有表名成功, 表数量: {}", table_names.size());
+    return table_names;
+}
+
+TableInfo MySQLDatabaseDriver::GetTableStructure(const std::string& table_name)
+{
+    CheckConnected(is_connected_);
+
+    // 校验表名合法性, 非法表名拼入查询语句会带来 SQL 注入风险
+    if (!SQLValidator::IsValidTableName(table_name))
+    {
+        ERR("MySQL 获取表结构失败, 表名非法, table_name: {}", table_name);
+        throw ChatExcelException(ErrorCode::DB_IDENTIFIER_INVALID);
+    }
+
+    // DESC 结果列 : Field, Type, Null, Key, Default, Extra
+    QueryResult result = ExecuteQuery("DESC " + QuoteIdentifier(table_name));
+    if (!result.IsSuccess())
+    {
+        ERR("MySQL 查询表结构失败, table_name: {}, 错误: {}", table_name, result.GetErrorMessage());
+        throw ChatExcelException(ErrorCode::DB_EXECUTE_FAILED);
+    }
+
+    TableInfo table_info;
+    table_info.name = table_name;
+    for (size_t row_index = 0; row_index < result.GetRowCount(); ++row_index)
+    {
+        const std::vector<std::string>& row = result.GetRow(row_index);
+        ColumnInfo column_info;
+        column_info.name = GetRowColumnValue(row, 0);                      // Field
+        column_info.type = GetRowColumnValue(row, 1);                      // Type
+        column_info.nullable = GetRowColumnValue(row, 2) == "YES";         // Null
+        column_info.is_primary_key = GetRowColumnValue(row, 3) == "PRI";   // Key
+        column_info.default_value = GetRowColumnValue(row, 4);             // Default
+        // Extra 中包含 auto_increment 表示自增列
+        column_info.auto_increment =
+            GetRowColumnValue(row, 5).find(kMySQLAutoIncrementKeyword) != std::string::npos;
+        table_info.columns.push_back(std::move(column_info));
+    }
+    INFO("MySQL 查询表结构成功, table_name: {}, 列数: {}", table_name, table_info.columns.size());
+    return table_info;
+}
+
+std::string MySQLDatabaseDriver::ConvertExcelColumnType(const std::string& excel_type) const
+{
+    // BOOLEAN 类型转化为 INT 类型, DATE 类型转化为 TEXT 类型, 其余类型原样返回
+    if (excel_type == kExcelBooleanColumnType)
+    {
+        return kMySQLBooleanColumnType;
+    }
+    if (excel_type == kExcelDateColumnType)
+    {
+        return kMySQLDateColumnType;
+    }
+    return excel_type;
 }
 
 QueryResult MySQLDatabaseDriver::ExecuteQueryInternal(const std::string& sql)

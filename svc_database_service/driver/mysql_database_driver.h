@@ -56,6 +56,30 @@ public:
      */
     std::string QuoteIdentifier(const std::string& identifier) const override;
 
+    /**
+     * @brief 获取 MySQL 数据库中所有表名, 内部执行 SHOW TABLES 语句
+     * @return 表名列表
+     * @throws ChatExcelException 未建立连接或查询失败时抛出(DB_NOT_CONNECTED/DB_EXECUTE_FAILED)
+     */
+    std::vector<std::string> GetAllTablesName() override;
+
+    /**
+     * @brief 获取 MySQL 指定表的结构信息, 内部执行 DESC 语句并解析
+     *        Field/Type/Null/Key/Default/Extra 六列结果
+     * @param table_name 表名
+     * @return 表信息(表名与列信息集合)
+     * @throws ChatExcelException 表名非法, 未建立连接或查询失败时抛出
+     */
+    TableInfo GetTableStructure(const std::string& table_name) override;
+
+    /**
+     * @brief 将 Excel 解析列类型转化为 MySQL 列类型,
+     *        BOOLEAN 转化为 INT 类型, DATE 转化为 TEXT 类型, 其余类型原样返回
+     * @param excel_type Excel 解析列类型(TEXT/BIGINT/DOUBLE/BOOLEAN/DATE)
+     * @return MySQL 列类型
+     */
+    std::string ConvertExcelColumnType(const std::string& excel_type) const override;
+
 protected:
     /**
      * @brief 使用 mysql_query 与 mysql_store_result 执行查询类 SQL 语句

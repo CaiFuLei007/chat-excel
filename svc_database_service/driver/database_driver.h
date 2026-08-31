@@ -138,6 +138,29 @@ public:
      */
     virtual std::string QuoteIdentifier(const std::string& identifier) const = 0;
 
+    /**
+     * @brief 获取数据库中所有表名(包含临时表, 不过滤)
+     * @return 表名列表
+     * @throws ChatExcelException 未建立连接或查询失败时抛出(DB_NOT_CONNECTED/DB_EXECUTE_FAILED)
+     */
+    virtual std::vector<std::string> GetAllTablesName() = 0;
+
+    /**
+     * @brief 获取指定表的结构信息, 按各数据库方言查询并解析表结构
+     * @param table_name 表名
+     * @return 表信息(表名与列信息集合)
+     * @throws ChatExcelException 表名非法, 未建立连接或查询失败时抛出
+     */
+    virtual TableInfo GetTableStructure(const std::string& table_name) = 0;
+
+    /**
+     * @brief 将 Excel 解析列类型转化为当前数据库的列类型,
+     *        BOOLEAN 转化为整型类型, DATE 转化为文本类型, 其余类型原样返回
+     * @param excel_type Excel 解析列类型(TEXT/BIGINT/DOUBLE/BOOLEAN/DATE)
+     * @return 数据库列类型
+     */
+    virtual std::string ConvertExcelColumnType(const std::string& excel_type) const = 0;
+
 protected:
     /**
      * @brief 执行查询类 SQL 语句的内部实现, 由子类完成具体数据库操作,
@@ -195,6 +218,15 @@ protected:
      * @throws ChatExcelException 校验失败时抛出对应错误码
      */
     void ValidateUpdateSql(const std::string& sql) const;
+
+    /**
+     * @brief 获取行数据中指定下标的列值, 供各驱动解析表结构等结果集时使用,
+     *        下标越界时返回空字符串
+     * @param row 行数据集合
+     * @param column_index 列下标
+     * @return 指定下标的列值
+     */
+    static std::string GetRowColumnValue(const std::vector<std::string>& row, size_t column_index);
 
     // 数据库配置对象
     std::shared_ptr<DatabaseConfig> config_;

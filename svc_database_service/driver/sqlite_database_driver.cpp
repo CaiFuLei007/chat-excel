@@ -7,12 +7,29 @@
 #include <cpp-toolkit/logger.h>
 
 #include "common/exception.h"
+#include "svc_database_service/driver/sql_validator.h"
 
 namespace chat_excel
 {
 
 namespace
 {
+
+// SQLite 查询所有表名语句(排除 sqlite_sequence 等 SQLite 内部表)
+constexpr const char* kSQLiteListTablesSql =
+    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
+
+// SQLite 布尔列类型(Excel BOOLEAN 类型转化后的类型)
+constexpr const char* kSQLiteBooleanColumnType = "INTEGER";
+
+// SQLite 文本列类型(Excel DATE 类型转化后的类型)
+constexpr const char* kSQLiteDateColumnType = "TEXT";
+
+// Excel 解析列类型 : 布尔类型
+constexpr const char* kExcelBooleanColumnType = "BOOLEAN";
+
+// Excel 解析列类型 : 日期类型
+constexpr const char* kExcelDateColumnType = "DATE";
 
 /**
  * @brief sqlite3_stmt 语句守护类, 作用域结束时自动释放语句对象
@@ -224,6 +241,77 @@ std::string SQLiteDatabaseDriver::QuoteIdentifier(const std::string& identifier)
     }
     quoted.push_back('"');
     return quoted;
+}
+
+std::vector<std::string> SQLiteDatabaseDriver::GetAllTablesName()
+{
+    CheckConnected(is_connected_);
+    QueryResult result = ExecuteQuery(kSQLiteListTablesSql);
+    if (!result.IsSuccess())
+    {
+        ERR("SQLite 查询所有表名失败, 错误: {}", result.GetErrorMessage());
+        throw ChatExcelException(ErrorCode::DB_EXECUTE_FAILED);
+    }
+
+    // 查询结果集中表名位于第一列
+    std::vector<std::string> table_names;
+    table_names.reserve(result.GetRowCount());
+    for (size_t row_index = 0; row_index < result.GetRowCount(); ++row_index)
+    {
+        table_names.push_back(result.GetRow(row_index)[0]);
+    }
+    INFO("SQLite 查询所有表名成功, 表数量: {}", table_names.size());
+    return table_names;
+}
+
+TableInfo SQLiteDatabaseDriver::GetTableStructure(const std::string& table_name)
+{
+    CheckConnected(is_connected_);
+
+    // 校验表名合法性, 非法表名拼入查询语句会带来 SQL 注入风险
+    if (!SQLValidator::IsValidTableName(table_name))
+    {
+        ERR("SQLite 获取表结构失败, 表名非法, table_name: {}", table_name);
+        throw ChatExcelException(ErrorCode::DB_IDENTIFIER_INVALID);
+    }
+
+    // PRAGMA table_info 结果列 : cid, name, type, notnull, dflt_value, pk
+    QueryResult result = ExecuteQuery("PRAGMA table_info(" + QuoteIdentifier(table_name) + ")");
+    if (!result.IsSuccess())
+    {
+        ERR("SQLite 查询表结构失败, table_name: {}, 错误: {}", table_name, result.GetErrorMessage());
+        throw ChatExcelException(ErrorCode::DB_EXECUTE_FAILED);
+    }
+
+    TableInfo table_info;
+    table_info.name = table_name;
+    for (size_t row_index = 0; row_index < result.GetRowCount(); ++row_index)
+    {
+        const std::vector<std::string>& row = result.GetRow(row_index);
+        ColumnInfo column_info;
+        column_info.name = GetRowColumnValue(row, 1);                    // name
+        column_info.type = GetRowColumnValue(row, 2);                    // type
+        column_info.nullable = GetRowColumnValue(row, 3) == "0";         // notnull
+        column_info.default_value = GetRowColumnValue(row, 4);           // dflt_value
+        column_info.is_primary_key = GetRowColumnValue(row, 5) != "0";   // pk
+        table_info.columns.push_back(std::move(column_info));
+    }
+    INFO("SQLite 查询表结构成功, table_name: {}, 列数: {}", table_name, table_info.columns.size());
+    return table_info;
+}
+
+std::string SQLiteDatabaseDriver::ConvertExcelColumnType(const std::string& excel_type) const
+{
+    // BOOLEAN 类型转化为 INTEGER 类型, DATE 类型转化为 TEXT 类型, 其余类型原样返回
+    if (excel_type == kExcelBooleanColumnType)
+    {
+        return kSQLiteBooleanColumnType;
+    }
+    if (excel_type == kExcelDateColumnType)
+    {
+        return kSQLiteDateColumnType;
+    }
+    return excel_type;
 }
 
 QueryResult SQLiteDatabaseDriver::ExecuteQueryInternal(const std::string& sql)

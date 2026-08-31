@@ -126,14 +126,15 @@ public:
                            const std::string& sql);
 
     /**
-     * @brief 获取表结构, 返回 JSON 格式的表结构描述(表名与列信息集合)
+     * @brief 获取表结构, 返回 JSON 格式的表结构描述(表名与列信息集合),
+     *        直接调用驱动层的 GetTableStructure 接口
      * @param request_id 请求 ID, 用于日志链路追踪
      * @param connection_id 数据库连接 ID
      * @param table_name 表名
      * @return JSON 格式的表结构描述字符串
      */
-    std::string GetTableStruct(const std::string& request_id, const std::string& connection_id,
-                               const std::string& table_name);
+    std::string GetTableStructure(const std::string& request_id, const std::string& connection_id,
+                                  const std::string& table_name);
 
     /**
      * @brief 获取指定表的采样数据, 返回 JSON 格式的采样数据(列名集合与行数据集合);
@@ -227,7 +228,8 @@ private:
                                                             const std::string& connection_id) const;
 
     /**
-     * @brief 查询数据库中所有表名(包含临时表, 不过滤)
+     * @brief 查询数据库中所有表名(包含临时表, 不过滤),
+     *        直接调用驱动层的 GetAllTablesName 接口
      * @param driver 数据库驱动实例
      * @return 表名列表
      */
@@ -241,15 +243,6 @@ private:
      */
     bool IsTableExists(const std::shared_ptr<DatabaseDriver>& driver,
                        const std::string& table_name) const;
-
-    /**
-     * @brief 查询表结构信息, MySQL 使用 DESC 语句, SQLite 使用 PRAGMA table_info 语句
-     * @param driver 数据库驱动实例
-     * @param table_name 表名
-     * @return 表信息(表名与列信息集合)
-     */
-    TableInfo QueryTableSchema(const std::shared_ptr<DatabaseDriver>& driver,
-                               const std::string& table_name) const;
 
     /**
      * @brief 确定实际查询的表名 : 存在临时表且未强制查原表时返回临时表名

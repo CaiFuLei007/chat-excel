@@ -97,6 +97,11 @@ void DatabaseDriver::CheckConnected(bool connected) const
     }
 }
 
+std::string DatabaseDriver::GetRowColumnValue(const std::vector<std::string>& row, size_t column_index)
+{
+    return column_index < row.size() ? row[column_index] : std::string();
+}
+
 void DatabaseDriver::ValidateQuerySql(const std::string& sql) const
 {
     // 基础合法性校验(空语句, 危险操作, 多条语句, 支持的类型)
