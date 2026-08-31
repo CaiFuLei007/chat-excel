@@ -88,3 +88,26 @@ target_link_libraries(chat_excel_database_business PUBLIC
     chat_excel_database_connection
     chat_excel_proto
 )
+
+# =================================================================
+#                         生成静态库(RPC 接口实现层)
+# =================================================================
+
+# 数据库子服务 RPC 接口实现层静态库 : DatabaseServiceImpl
+add_library(chat_excel_database_service_impl STATIC
+    database_service_impl.cpp
+)
+
+# 头文件搜索路径 :
+#   项目根目录 : 支持以 #include "svc_database_service/xxx.h" 方式导入
+target_include_directories(chat_excel_database_service_impl PUBLIC
+    ${PROJECT_SOURCE_DIR}
+)
+
+# 链接依赖 :
+#   chat_excel_database_business : 数据库业务逻辑类, RPC 接口实现层调用其完成业务处理,
+#                                 传递链接驱动层/连接管理器/数据库子服务 proto 生成代码,
+#                                 以及 brpc(logger 日志, ClosureGuard 响应生命周期管理)
+target_link_libraries(chat_excel_database_service_impl PUBLIC
+    chat_excel_database_business
+)

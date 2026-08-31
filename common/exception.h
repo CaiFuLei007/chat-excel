@@ -234,6 +234,30 @@ enum class ErrorCode : int
     // 数据 JSON 序列化或反序列化失败
     DB_SERIALIZE_ERROR = 320,
 
+    // 数据库子服务请求参数错误 : 会话 ID 为空
+    DB_SERVICE_SESSION_ID_EMPTY = 321,
+
+    // 数据库子服务请求参数错误 : 用户 ID 为空
+    DB_SERVICE_USER_ID_EMPTY = 322,
+
+    // 数据库子服务请求参数错误 : 数据库连接 ID 为空
+    DB_SERVICE_CONNECTION_ID_EMPTY = 323,
+
+    // 数据库子服务请求参数错误 : 表名为空
+    DB_SERVICE_TABLE_NAME_EMPTY = 324,
+
+    // 数据库子服务请求参数错误 : SQL 语句为空
+    DB_SERVICE_SQL_EMPTY = 325,
+
+    // 数据库子服务内部错误
+    DB_SERVICE_INTERNAL_ERROR = 326,
+
+    // 数据库子服务请求参数错误 : 要删除的表名列表为空
+    DB_SERVICE_TABLE_NAMES_EMPTY = 327,
+
+    // 数据库子服务请求参数错误 : WorkSheet 数据缺失
+    DB_SERVICE_WORKSHEET_DATA_EMPTY = 328,
+
     // ==================== Excel 解析子服务错误码范围 400 - 499 ====================
     // Excel 文件打开失败(文件不存在或格式非法)
     EXCEL_PARSE_FILE_OPEN_FAILED = 400,
