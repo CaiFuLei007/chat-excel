@@ -78,6 +78,8 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::DB_SQL_DANGEROUS), "SQL 语句包含危险操作"},
         {static_cast<int>(ErrorCode::DB_SQL_MULTIPLE_STATEMENTS), "SQL 语句包含多条语句"},
         {static_cast<int>(ErrorCode::DB_IDENTIFIER_INVALID), "数据库标识符(表名, 列名)无效"},
+        {static_cast<int>(ErrorCode::DB_CONNECTION_NOT_FOUND), "数据库连接不存在"},
+        {static_cast<int>(ErrorCode::DB_CONNECTION_PROTECTED), "数据库连接受保护, 禁止删除"},
         {static_cast<int>(ErrorCode::EXCEL_PARSE_FILE_OPEN_FAILED), "Excel 文件打开失败"},
         {static_cast<int>(ErrorCode::EXCEL_PARSE_WORKSHEET_NOT_FOUND), "worksheet 不存在"},
         {static_cast<int>(ErrorCode::EXCEL_PARSE_FAILED), "Excel 解析失败"},

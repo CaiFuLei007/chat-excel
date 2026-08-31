@@ -216,6 +216,12 @@ enum class ErrorCode : int
     // 数据库标识符(表名, 列名)无效
     DB_IDENTIFIER_INVALID = 314,
 
+    // 数据库连接不存在
+    DB_CONNECTION_NOT_FOUND = 315,
+
+    // 数据库连接受保护, 禁止删除
+    DB_CONNECTION_PROTECTED = 316,
+
     // ==================== Excel 解析子服务错误码范围 400 - 499 ====================
     // Excel 文件打开失败(文件不存在或格式非法)
     EXCEL_PARSE_FILE_OPEN_FAILED = 400,

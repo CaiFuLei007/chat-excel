@@ -4,8 +4,8 @@ cmake_minimum_required(VERSION 3.10)
 # 项目名称
 project(chat_excel CXX)
 
-# C++ 标准版本, 项目基于 C++17 实现, cpp-toolkit 的 util.h(string_view) 要求 C++17 及以上
-set(CMAKE_CXX_STANDARD 17)
+# C++ 标准版本, 项目基于 C++20 实现, cpp-toolkit 的 timerwheel.h(jthread) 要求 C++20 及以上
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 编译警告选项

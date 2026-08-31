@@ -47,3 +47,18 @@ target_link_libraries(chat_excel_database_driver PUBLIC
     SQLite::SQLite3
     ${MYSQL_CLIENT_LIBRARY}
 )
+
+# =================================================================
+#                         生成静态库(连接管理器)
+# =================================================================
+
+# 数据库连接管理器静态库 : 连接信息类 + 连接管理器单例
+add_library(chat_excel_database_connection STATIC
+    connection_manager.cpp
+)
+
+# 链接依赖 :
+#   chat_excel_database_driver : 驱动抽象接口与工厂, 连接管理器管理的连接实例
+target_link_libraries(chat_excel_database_connection PUBLIC
+    chat_excel_database_driver
+)
