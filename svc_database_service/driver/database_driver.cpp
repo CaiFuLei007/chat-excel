@@ -67,6 +67,27 @@ QueryResult DatabaseDriver::RollbackTransaction()
     return ExecuteUpdate(kRollbackTransactionSql);
 }
 
+DatabaseType DatabaseDriver::GetDatabaseType() const
+{
+    return config_->GetDatabaseType();
+}
+
+const std::shared_ptr<DatabaseConfig>& DatabaseDriver::GetConfig() const
+{
+    return config_;
+}
+
+QueryResult DatabaseDriver::DropTable(const std::string& table_name)
+{
+    // 删表属于受控管理操作, 仅校验表名合法性, 不进行危险关键字校验
+    if (!SQLValidator::IsValidTableName(table_name))
+    {
+        ERR("删除数据表失败, 表名非法, table_name: {}", table_name);
+        throw ChatExcelException(ErrorCode::DB_IDENTIFIER_INVALID);
+    }
+    return ExecuteUpdateInternal("DROP TABLE " + QuoteIdentifier(table_name));
+}
+
 void DatabaseDriver::CheckConnected(bool connected) const
 {
     if (!connected)

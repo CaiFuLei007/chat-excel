@@ -326,6 +326,10 @@ SqlType SQLValidator::GetSqlType(const std::string& sql)
     {
         return SqlType::DESC;
     }
+    else if (first_keyword == "PRAGMA")
+    {
+        return SqlType::PRAGMA;
+    }
     else if (first_keyword == "INSERT")
     {
         return SqlType::INSERT;
@@ -368,6 +372,7 @@ bool SQLValidator::IsReadOnlySql(const std::string& sql)
     case SqlType::SELECT:
     case SqlType::SHOW:
     case SqlType::DESC:
+    case SqlType::PRAGMA:
         return true;
     default:
         return false;
@@ -614,6 +619,69 @@ std::vector<std::string> SQLValidator::ExtractTableNames(const std::string& sql)
             {
                 AddTableName(table_names, tokens[cursor].text);
             }
+        }
+    }
+    return table_names;
+}
+
+std::vector<std::string> SQLValidator::ExtractModifyTargetTableNames(const std::string& sql)
+{
+    std::string normalized = NormalizeSql(sql);
+    // DELETE 语句中 FROM 后的表为修改目标表, 其余语句中 FROM 后的表为只读数据源表
+    const bool delete_from_is_target = GetFirstKeyword(normalized) == "DELETE";
+
+    std::vector<SqlToken> tokens = TokenizeSql(normalized);
+    std::vector<std::string> table_names;
+
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        // 字符串字面量不参与表名提取
+        if (tokens[i].is_string_literal)
+        {
+            continue;
+        }
+
+        std::string upper_token = ToUpperAscii(tokens[i].text);
+        // 仅处理携带修改目标表名的关键字 : INSERT/REPLACE INTO, UPDATE,
+        // DELETE FROM, CREATE/ALTER/TRUNCATE/DROP TABLE
+        const bool is_target_keyword = upper_token == "INTO" || upper_token == "UPDATE" ||
+                                       upper_token == "TABLE" ||
+                                       (upper_token == "FROM" && delete_from_is_target);
+        if (!is_target_keyword)
+        {
+            continue;
+        }
+
+        size_t cursor = i + 1;
+        // TABLE 关键字后跳过 IF [NOT] EXISTS(如 DROP TABLE IF EXISTS)
+        if (upper_token == "TABLE")
+        {
+            if (cursor < tokens.size() && ToUpperAscii(tokens[cursor].text) == "IF")
+            {
+                ++cursor;
+            }
+            if (cursor < tokens.size() && ToUpperAscii(tokens[cursor].text) == "NOT")
+            {
+                ++cursor;
+            }
+            if (cursor < tokens.size() && ToUpperAscii(tokens[cursor].text) == "EXISTS")
+            {
+                ++cursor;
+            }
+        }
+
+        // INTO/UPDATE/FROM 关键字仅携带单个目标表名,
+        // TABLE 关键字支持逗号分隔的多表(CREATE/ALTER/TRUNCATE TABLE t1, t2)
+        while (cursor < tokens.size() && IsTableNameToken(tokens[cursor]))
+        {
+            AddTableName(table_names, tokens[cursor].text);
+            ++cursor;
+            if (upper_token == "TABLE" && cursor < tokens.size() && tokens[cursor].text == ",")
+            {
+                ++cursor;
+                continue;
+            }
+            break;
         }
     }
     return table_names;

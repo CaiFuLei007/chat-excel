@@ -21,3 +21,8 @@ MySQL 配置 : 配置信息从环境变量中获取
 	4. 主机地址 : MYSQL_CHAT_EXCEL_TEST_HOST
 	5. 端口 : MYSQL_CHAT_EXCEL_TEST_PORT
 	6. 字符集 : MYSQL_CHAT_EXCEL_TEST_CHARSET
+
+
+## 2. DataBusiness 业务层代码纠正
+
+1. DatabaseBusiness::ExecuteModifySqlWithTempTable 在执行 修改类 SQL 语句的时候 , 并不需要对所有相关表都进行备份, 只需要对当前将要修改的表进行备份即可 , DatabaseBusiness::ReplaceTableNames 也需要同步进行修改

@@ -80,6 +80,15 @@ public:
     static std::vector<std::string> ExtractTableNames(const std::string& sql);
 
     /**
+     * @brief 从修改类 SQL 语句中提取将要修改的目标表名, 只读引用的数据源表
+     *        (SELECT/JOIN 子句中的表)不会被提取; 覆盖 INSERT/REPLACE INTO,
+     *        UPDATE, DELETE FROM, CREATE/ALTER/TRUNCATE TABLE 等场景
+     * @param sql 原始 SQL 语句
+     * @return 修改目标表名列表(已去除引号包裹, 按出现顺序去重), 未识别到目标表时返回空列表
+     */
+    static std::vector<std::string> ExtractModifyTargetTableNames(const std::string& sql);
+
+    /**
      * @brief 删除 SQL 语句前后的空白字符(空格/制表符/换行符等)
      * @param sql 原始 SQL 语句
      * @return 去除前后空白后的 SQL 语句

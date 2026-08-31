@@ -222,6 +222,18 @@ enum class ErrorCode : int
     // 数据库连接受保护, 禁止删除
     DB_CONNECTION_PROTECTED = 316,
 
+    // 文件子服务 RPC 调用失败(获取信道失败或调用超时/失败)
+    DB_FILE_RPC_ERROR = 317,
+
+    // 数据库子服务本地文件操作失败
+    DB_LOCAL_FILE_ERROR = 318,
+
+    // 从 FastDFS 下载数据库文件失败
+    DB_FDFS_DOWNLOAD_ERROR = 319,
+
+    // 数据 JSON 序列化或反序列化失败
+    DB_SERIALIZE_ERROR = 320,
+
     // ==================== Excel 解析子服务错误码范围 400 - 499 ====================
     // Excel 文件打开失败(文件不存在或格式非法)
     EXCEL_PARSE_FILE_OPEN_FAILED = 400,

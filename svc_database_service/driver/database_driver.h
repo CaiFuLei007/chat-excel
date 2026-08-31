@@ -110,6 +110,27 @@ public:
     QueryResult RollbackTransaction();
 
     /**
+     * @brief 获取数据库类型
+     * @return 数据库类型枚举值
+     */
+    DatabaseType GetDatabaseType() const;
+
+    /**
+     * @brief 获取数据库配置对象
+     * @return 数据库配置对象
+     */
+    const std::shared_ptr<DatabaseConfig>& GetConfig() const;
+
+    /**
+     * @brief 删除数据表, 供业务层执行受控的删表操作(临时表清理, 文件表删除),
+     *        仅校验表名合法性, 不进行危险关键字校验(用户 SQL 仍会被危险关键字拦截)
+     * @param table_name 表名
+     * @return SQL 执行结果(执行失败时 success 为 false 并携带错误信息)
+     * @throws ChatExcelException 表名非法或未建立连接时抛出
+     */
+    QueryResult DropTable(const std::string& table_name);
+
+    /**
      * @brief 为标识符(表名, 列名等)添加数据库方言的引号包裹,
      *        MySQL 使用反引号, SQLite 使用双引号, 内部已有引号时双写转义
      * @param identifier 原始标识符

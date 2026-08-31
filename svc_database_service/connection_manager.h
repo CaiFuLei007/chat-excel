@@ -153,6 +153,13 @@ public:
     std::shared_ptr<ConnectionInfo> GetConnection(const std::string& connection_id);
 
     /**
+     * @brief 通过用户 ID 获取该用户名下的所有连接 ID 列表
+     * @param user_id 用户 ID
+     * @return 连接 ID 列表, 用户没有连接时返回空列表
+     */
+    std::vector<std::string> GetUserConnectionIds(const std::string& user_id);
+
+    /**
      * @brief 通过连接 ID 移除连接信息, 并断开对应的底层连接;
      *        excel_connection 全局连接受保护, 禁止移除
      * @param connection_id 连接 ID

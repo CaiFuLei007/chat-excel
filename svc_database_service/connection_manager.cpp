@@ -148,6 +148,18 @@ std::shared_ptr<ConnectionInfo> DataBaseConnectionManager::GetConnection(const s
     return iter->second;
 }
 
+std::vector<std::string> DataBaseConnectionManager::GetUserConnectionIds(const std::string& user_id)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto iter = user_connections_.find(user_id);
+    if (iter == user_connections_.end())
+    {
+        DBG("用户没有数据库连接, 用户 ID: {}", user_id);
+        return {};
+    }
+    return iter->second;
+}
+
 void DataBaseConnectionManager::RemoveConnection(const std::string& connection_id)
 {
     if (connection_id == kExcelConnectionId)
