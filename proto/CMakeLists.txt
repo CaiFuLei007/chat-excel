@@ -16,11 +16,12 @@ file(MAKE_DIRECTORY ${PROTO_CODE_DIR})
 
 # 生成 user_service.pb.h/user_service.pb.cc 与 notify_service.pb.h/notify_service.pb.cc,
 # 以及 excel_parse_service.pb.h/excel_parse_service.pb.cc,
-# file_service.pb.h/file_service.pb.cc 和 database_service.pb.h/database_service.pb.cc
+# file_service.pb.h/file_service.pb.cc, database_service.pb.h/database_service.pb.cc
+# 和 ai_service.pb.h/ai_service.pb.cc
 protobuf_generate(OUT_VAR PROTO_GENERATED_FILES
     LANGUAGE cpp
     PROTOC_OUT_DIR ${PROTO_CODE_DIR}
-    PROTOS user_service.proto notify_service.proto excel_parse_service.proto file_service.proto database_service.proto
+    PROTOS user_service.proto notify_service.proto excel_parse_service.proto file_service.proto database_service.proto ai_service.proto
 )
 
 # =================================================================

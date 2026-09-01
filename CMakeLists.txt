@@ -89,3 +89,6 @@ add_subdirectory(test/svc_ai_service/chat_session_manager)
 
 # AI 子服务业务逻辑层单元测试
 add_subdirectory(test/svc_ai_service/ai_business)
+
+# AI 子服务 RPC 接口实现层单元测试
+add_subdirectory(test/svc_ai_service/ai_service_impl)

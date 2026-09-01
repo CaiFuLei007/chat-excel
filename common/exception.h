@@ -348,6 +348,30 @@ enum class ErrorCode : int
     // ChatSDK 中聊天会话不存在
     AI_CHAT_SDK_SESSION_NOT_FOUND = 613,
 
+    // AI 子服务请求参数错误 : 用户 ID 为空
+    AI_SERVICE_USER_ID_EMPTY = 614,
+
+    // AI 子服务请求参数错误 : 聊天会话 ID 为空
+    AI_SERVICE_CHAT_SESSION_ID_EMPTY = 615,
+
+    // AI 子服务请求参数错误 : 模型名称为空
+    AI_SERVICE_MODEL_NAME_EMPTY = 616,
+
+    // AI 子服务请求参数错误 : 会话类型为空
+    AI_SERVICE_SESSION_TYPE_EMPTY = 617,
+
+    // AI 子服务请求参数错误 : 会话类型无效(仅支持 excel / database)
+    AI_SERVICE_SESSION_TYPE_INVALID = 618,
+
+    // AI 子服务请求参数错误 : database 类型会话缺少数据库连接信息
+    AI_SERVICE_DB_CONNECTION_INFO_EMPTY = 619,
+
+    // AI 子服务请求参数错误 : 文件 ID 为空
+    AI_SERVICE_FILE_ID_EMPTY = 620,
+
+    // AI 子服务内部错误
+    AI_SERVICE_INTERNAL_ERROR = 621,
+
     // ==================== 子服务错误码范围预留 ====================
     // 文件子服务错误码范围 200 - 299, eg: FILE_NOT_FOUND 文件不存在
     // 数据库子服务错误码范围 300 - 399, eg: DB_CONNECTION_FAILED 数据库连接失败

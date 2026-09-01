@@ -121,6 +121,14 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::AI_CHAT_SDK_CREATE_SESSION_ERROR), "ChatSDK 创建聊天会话失败"},
         {static_cast<int>(ErrorCode::AI_CHAT_SDK_REMOVE_SESSION_ERROR), "ChatSDK 删除聊天会话失败"},
         {static_cast<int>(ErrorCode::AI_CHAT_SDK_SESSION_NOT_FOUND), "ChatSDK 中聊天会话不存在"},
+        {static_cast<int>(ErrorCode::AI_SERVICE_USER_ID_EMPTY), "AI 子服务请求参数错误 : 用户 ID 为空"},
+        {static_cast<int>(ErrorCode::AI_SERVICE_CHAT_SESSION_ID_EMPTY), "AI 子服务请求参数错误 : 聊天会话 ID 为空"},
+        {static_cast<int>(ErrorCode::AI_SERVICE_MODEL_NAME_EMPTY), "AI 子服务请求参数错误 : 模型名称为空"},
+        {static_cast<int>(ErrorCode::AI_SERVICE_SESSION_TYPE_EMPTY), "AI 子服务请求参数错误 : 会话类型为空"},
+        {static_cast<int>(ErrorCode::AI_SERVICE_SESSION_TYPE_INVALID), "AI 子服务请求参数错误 : 会话类型无效(仅支持 excel / database)"},
+        {static_cast<int>(ErrorCode::AI_SERVICE_DB_CONNECTION_INFO_EMPTY), "AI 子服务请求参数错误 : database 类型会话缺少数据库连接信息"},
+        {static_cast<int>(ErrorCode::AI_SERVICE_FILE_ID_EMPTY), "AI 子服务请求参数错误 : 文件 ID 为空"},
+        {static_cast<int>(ErrorCode::AI_SERVICE_INTERNAL_ERROR), "AI 子服务内部错误"},
     };
 
     auto iter = kErrorMessageMap.find(static_cast<int>(error_code));
