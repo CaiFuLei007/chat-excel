@@ -220,9 +220,11 @@ POST /api/ai/models
 
 [A02] 新建聊天会话
 POST /api/ai/session/create
-请求体：{ "requestId": str, "sessionId": str, "modelName": str, "title": str }
+请求体：{ "requestId": str, "sessionId": str, "modelName": str, "sessionType": str, "dbConnectionInfo": str }
+sessionType：会话类型，必填，仅支持 excel/database
+dbConnectionInfo：数据库连接信息JSON，database 类型会话必填，excel 类型不填
 返回结果：{ "chatSessionId": str, "modelName": str }
-注意：title 创建时可不填，首条聊天消息后会自动更新为会话标题
+注意：会话标题不透传，首条聊天消息后会自动更新为会话标题
 
 [A03] 获取聊天会话列表
 POST /api/ai/chatSessionLists
@@ -230,7 +232,7 @@ POST /api/ai/chatSessionLists
 返回结果：{ "chatSessionLists": [ {
   "chatSessionId": str, "modelName": str, "title": str,
   "createdAt": int, "updatedAt": int, "messageCount": int,
-  "firstUserMessageContent": str
+  "firstUserMessageContent": str, "sessionType": str, "dbConnectionInfo": str
 } ] }
 
 [A04] 获取指定聊天会话历史消息

@@ -9,6 +9,7 @@
 #include <cpp-toolkit/util.h>
 #include <jsoncpp/json/json.h>
 #include "common/exception.h"
+#include "ai_service.pb.h"
 #include "database_service.pb.h"
 #include "file_service.pb.h"
 #include "user_service.pb.h"
@@ -25,6 +26,9 @@ namespace file_proto = ::chat_excel_proto::file_service;
 // 数据库子服务 proto 生成代码所在命名空间的别名, 简化 RPC 客户端调用
 namespace db_proto = ::chat_excel_proto::database_service;
 
+// AI 子服务 proto 生成代码所在命名空间的别名, 简化 RPC 客户端调用
+namespace ai_proto = ::chat_excel_proto::ai_service;
+
 namespace
 {
 
@@ -37,11 +41,17 @@ constexpr char kFileServiceName[] = "FileService";
 // 数据库子服务名称(与数据库子服务注册到 ETCD 注册中心的服务名保持一致)
 constexpr char kDatabaseServiceName[] = "DataBaseService";
 
+// AI 子服务名称(与 AI 子服务注册到 ETCD 注册中心的服务名保持一致)
+constexpr char kAiServiceName[] = "AIService";
+
 // 用户子服务 RPC 调用超时时间(毫秒)
 constexpr int kRpcTimeoutMilliseconds = 3000;
 
 // 文件子服务 RPC 调用超时时间(毫秒), 文件上传/下载涉及大二进制数据传输, 超时时间较长
 constexpr int kFileRpcTimeoutMilliseconds = 30 * 1000;
+
+// AI 子服务 RPC 调用超时时间(毫秒), 模型列表/会话管理均为轻量操作
+constexpr int kAiRpcTimeoutMilliseconds = 3000;
 
 // HTTP 成功状态码
 constexpr int kHttpStatusOk = 200;
@@ -277,6 +287,50 @@ bool CallDatabaseRpc(const std::string& request_id,
         ERR("数据库子服务 RPC 调用失败, requestId: {}, 错误信息: {}", request_id, controller.ErrorText());
         error_code = kGatewayErrorCodeUnavailable;
         error_msg = "数据库子服务 RPC 调用失败 : " + controller.ErrorText();
+        return false;
+    }
+
+    // RPC 调用成功但业务处理失败, 透传后端业务错误码与错误信息
+    error_code = rpc_response.error_code();
+    error_msg = rpc_response.error_msg();
+    if (error_code != static_cast<int>(ErrorCode::SUCCESS))
+    {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief AI 子服务 RPC 同步调用通用流程封装, 内部完成超时设置、接口调用与结果检查
+ * @param request_id 请求 ID, 用于日志链路追踪
+ * @param ai_service_stub AI 子服务 RPC 客户端存根
+ * @param rpc_method RPC 客户端成员函数指针, 指向调用的 RPC 接口
+ * @param rpc_request RPC 请求对象
+ * @param rpc_response 输出参数, RPC 响应对象
+ * @param error_code 输出参数, 调用失败时的错误码(RPC 调用失败为网关错误码 503, 业务失败为透传的后端业务错误码)
+ * @param error_msg 输出参数, 调用失败时的错误信息
+ * @return true RPC 调用成功且业务处理成功, false RPC 调用失败或业务处理失败(错误信息通过输出参数返回)
+ */
+template <typename RequestType, typename ResponseType>
+bool CallAiRpc(const std::string& request_id,
+               ai_proto::AIService_Stub* ai_service_stub,
+               void (ai_proto::AIService_Stub::*rpc_method)(google::protobuf::RpcController*, const RequestType*, ResponseType*, google::protobuf::Closure*),
+               const RequestType& rpc_request,
+               ResponseType& rpc_response,
+               int& error_code,
+               std::string& error_msg)
+{
+    // 同步调用 AI 子服务的 RPC 接口, 设置调用超时时间
+    brpc::Controller controller;
+    controller.set_timeout_ms(kAiRpcTimeoutMilliseconds);
+    (ai_service_stub->*rpc_method)(&controller, &rpc_request, &rpc_response, nullptr);
+
+    // RPC 调用失败(网络超时、服务不可达等), 返回后端服务不可用错误码
+    if (controller.Failed())
+    {
+        ERR("AI 子服务 RPC 调用失败, requestId: {}, 错误信息: {}", request_id, controller.ErrorText());
+        error_code = kGatewayErrorCodeUnavailable;
+        error_msg = "AI 子服务 RPC 调用失败 : " + controller.ErrorText();
         return false;
     }
 
@@ -545,6 +599,20 @@ std::unique_ptr<db_proto::DatabaseService_Stub> GatewayServiceImpl::CreateDataba
 
     // 创建数据库子服务 RPC 客户端存根, 信道对象通过输出参数交由调用方持有(存根依赖信道对象存活)
     return std::make_unique<db_proto::DatabaseService_Stub>(channel.get());
+}
+
+std::unique_ptr<ai_proto::AIService_Stub> GatewayServiceImpl::CreateAiRpcStub(cpp_toolkit::ChannelPtr& channel)
+{
+    // 获取 AI 子服务信道
+    channel = GetServiceChannel(kAiServiceName);
+    if (channel == nullptr)
+    {
+        ERR("获取 AI 子服务信道失败, 服务名称: {}", kAiServiceName);
+        return nullptr;
+    }
+
+    // 创建 AI 子服务 RPC 客户端存根, 信道对象通过输出参数交由调用方持有(存根依赖信道对象存活)
+    return std::make_unique<ai_proto::AIService_Stub>(channel.get());
 }
 
 bool GatewayServiceImpl::CheckSessionValid(const std::string& request_id, const std::string& session_id,
@@ -2140,34 +2208,365 @@ void GatewayServiceImpl::HandleDbConnectionStatus(const httplib::Request& reques
          request_id, db_connect_id, error_code);
 }
 
-void GatewayServiceImpl::HandleAiModels(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleAiModels(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[A01] 获取支持模型列表接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求体, 提取请求 ID 与会话 ID
+    Json::Value request_json;
+    std::string request_id;
+    if (!ParseJsonBody(request, request_json, request_id))
+    {
+        SendEnvelopeResponse(response, "", kGatewayErrorCodeParams, "请求体 JSON 解析失败或缺少 requestId 字段");
+        return;
+    }
+    std::string session_id = request_json["sessionId"].asString();
+    if (session_id.empty())
+    {
+        ERR("[A01] 请求参数错误, sessionId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : sessionId 不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效, 失败时透传错误码与错误信息(模型列表接口不使用用户 ID)
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建 AI 子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<ai_proto::AIService_Stub> ai_service_stub = CreateAiRpcStub(channel);
+    if (ai_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "AI 子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求
+    ai_proto::GetModelsRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+
+    // 5. 调用 AI 子服务的 RPC 接口, 失败时透传错误码与错误信息
+    ai_proto::GetModelsResponse rpc_response;
+    if (!CallAiRpc(request_id, ai_service_stub.get(), &ai_proto::AIService_Stub::GetModels,
+                   rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建模型列表结果并发送 HTTP 响应
+    Json::Value result;
+    Json::Value model_list(Json::arrayValue);
+    for (const ai_proto::ModelInfo& model_info : rpc_response.result().models())
+    {
+        Json::Value model_json;
+        model_json["modelName"] = model_info.name();
+        model_json["modelDesc"] = model_info.desc();
+        model_list.append(model_json);
+    }
+    result["modelList"] = model_list;
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);
+    INFO("[A01] 获取支持模型列表接口处理完成, requestId: {}, 模型数量: {}", request_id, model_list.size());
 }
 
-void GatewayServiceImpl::HandleAiSessionCreate(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleAiSessionCreate(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[A02] 新建聊天会话接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求体, 提取请求 ID 与会话 ID(title 字段不透传, 会话标题由首条消息发送后自动更新)
+    Json::Value request_json;
+    std::string request_id;
+    if (!ParseJsonBody(request, request_json, request_id))
+    {
+        SendEnvelopeResponse(response, "", kGatewayErrorCodeParams, "请求体 JSON 解析失败或缺少 requestId 字段");
+        return;
+    }
+    std::string session_id = request_json["sessionId"].asString();
+    std::string model_name = request_json["modelName"].asString();
+    std::string session_type = request_json["sessionType"].asString();
+    if (session_id.empty() || model_name.empty() || session_type.empty())
+    {
+        ERR("[A02] 请求参数错误, sessionId/modelName/sessionType 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : sessionId/modelName/sessionType 不能为空");
+        return;
+    }
+
+    // 2. 校验会话类型有效性, database 类型会话必须携带数据库连接信息
+    std::string db_connection_info;
+    if (session_type == "database")
+    {
+        db_connection_info = request_json["dbConnectionInfo"].asString();
+        if (db_connection_info.empty())
+        {
+            ERR("[A02] 请求参数错误, database 类型会话缺少 dbConnectionInfo, requestId: {}", request_id);
+            SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                                 "请求参数错误 : database 类型会话的 dbConnectionInfo 不能为空");
+            return;
+        }
+    }
+    else if (session_type != "excel")
+    {
+        ERR("[A02] 请求参数错误, sessionType 无效: {}, requestId: {}", session_type, request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : sessionType 仅支持 excel/database");
+        return;
+    }
+
+    // 3. 鉴权, 检查会话是否有效, 失败时透传错误码与错误信息(获取用户 ID 作为会话归属用户)
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 4. 创建 AI 子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<ai_proto::AIService_Stub> ai_service_stub = CreateAiRpcStub(channel);
+    if (ai_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "AI 子服务不可用");
+        return;
+    }
+
+    // 5. 构建 RPC 请求
+    ai_proto::CreateChatSessionRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_user_id(user_id);
+    rpc_request.set_model(model_name);
+    rpc_request.set_session_type(session_type);
+    rpc_request.set_db_connection_info(db_connection_info);
+
+    // 6. 调用 AI 子服务的 RPC 接口, 失败时透传错误码与错误信息
+    ai_proto::CreateChatSessionResponse rpc_response;
+    if (!CallAiRpc(request_id, ai_service_stub.get(), &ai_proto::AIService_Stub::CreateSession,
+                   rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 7. 构建聊天会话数据结果并发送 HTTP 响应
+    Json::Value result;
+    result["chatSessionId"] = rpc_response.result().session().chat_session_id();
+    result["modelName"] = rpc_response.result().session().model();
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);
+    INFO("[A02] 新建聊天会话接口处理完成, requestId: {}, userId: {}, chatSessionId: {}, errorCode: {}",
+         request_id, user_id, result["chatSessionId"].asString(), error_code);
 }
 
-void GatewayServiceImpl::HandleAiChatSessionLists(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleAiChatSessionLists(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[A03] 获取聊天会话列表接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求体, 提取请求 ID 与会话 ID
+    Json::Value request_json;
+    std::string request_id;
+    if (!ParseJsonBody(request, request_json, request_id))
+    {
+        SendEnvelopeResponse(response, "", kGatewayErrorCodeParams, "请求体 JSON 解析失败或缺少 requestId 字段");
+        return;
+    }
+    std::string session_id = request_json["sessionId"].asString();
+    if (session_id.empty())
+    {
+        ERR("[A03] 请求参数错误, sessionId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : sessionId 不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效, 失败时透传错误码与错误信息(获取用户 ID 用于查询其会话列表)
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建 AI 子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<ai_proto::AIService_Stub> ai_service_stub = CreateAiRpcStub(channel);
+    if (ai_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "AI 子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求
+    ai_proto::GetSessionsRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_user_id(user_id);
+
+    // 5. 调用 AI 子服务的 RPC 接口, 失败时透传错误码与错误信息
+    ai_proto::GetSessionsResponse rpc_response;
+    if (!CallAiRpc(request_id, ai_service_stub.get(), &ai_proto::AIService_Stub::GetSessions,
+                   rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建会话列表结果并发送 HTTP 响应
+    Json::Value result;
+    Json::Value session_list(Json::arrayValue);
+    for (const ai_proto::SessionInfo& session_info : rpc_response.result().sessioninfo())
+    {
+        Json::Value session_json;
+        session_json["chatSessionId"] = session_info.id();
+        session_json["modelName"] = session_info.model();
+        session_json["title"] = session_info.title();
+        session_json["createdAt"] = static_cast<Json::Int64>(session_info.created_at());
+        session_json["updatedAt"] = static_cast<Json::Int64>(session_info.updated_at());
+        session_json["messageCount"] = session_info.message_count();
+        session_json["firstUserMessageContent"] = session_info.first_user_message_content();
+        session_json["sessionType"] = session_info.session_type();
+        session_json["dbConnectionInfo"] = session_info.db_connection_info();
+        session_list.append(session_json);
+    }
+    result["chatSessionLists"] = session_list;
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);
+    INFO("[A03] 获取聊天会话列表接口处理完成, requestId: {}, userId: {}, 会话数量: {}",
+         request_id, user_id, session_list.size());
 }
 
-void GatewayServiceImpl::HandleAiHistory(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleAiHistory(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[A04] 获取指定聊天会话历史消息接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求体, 提取请求 ID 与会话 ID
+    Json::Value request_json;
+    std::string request_id;
+    if (!ParseJsonBody(request, request_json, request_id))
+    {
+        SendEnvelopeResponse(response, "", kGatewayErrorCodeParams, "请求体 JSON 解析失败或缺少 requestId 字段");
+        return;
+    }
+    std::string session_id = request_json["sessionId"].asString();
+    std::string chat_session_id = request_json["chatSessionId"].asString();
+    if (session_id.empty() || chat_session_id.empty())
+    {
+        ERR("[A04] 请求参数错误, sessionId/chatSessionId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : sessionId/chatSessionId 不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效, 失败时透传错误码与错误信息(获取用户 ID 用于校验会话归属)
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建 AI 子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<ai_proto::AIService_Stub> ai_service_stub = CreateAiRpcStub(channel);
+    if (ai_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "AI 子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求
+    ai_proto::GetSessionHistoryRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_user_id(user_id);
+    rpc_request.set_chat_session_id(chat_session_id);
+
+    // 5. 调用 AI 子服务的 RPC 接口, 失败时透传错误码与错误信息
+    ai_proto::GetSessionHistoryResponse rpc_response;
+    if (!CallAiRpc(request_id, ai_service_stub.get(), &ai_proto::AIService_Stub::GetSessionHistory,
+                   rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建历史消息列表结果并发送 HTTP 响应(会话未关联文件时 fileId/dbConnectionInfo 为空字符串)
+    Json::Value result;
+    Json::Value message_list(Json::arrayValue);
+    for (const ai_proto::HistoryMessage& history_message : rpc_response.result().messages())
+    {
+        Json::Value message_json;
+        message_json["id"] = history_message.id();
+        message_json["role"] = history_message.role();
+        message_json["content"] = history_message.content();
+        message_json["timestamp"] = static_cast<Json::Int64>(history_message.timestamp());
+        message_list.append(message_json);
+    }
+    result["messageList"] = message_list;
+    result["fileId"] = rpc_response.result().file_id();
+    result["sessionType"] = rpc_response.result().session_type();
+    result["dbConnectionInfo"] = rpc_response.result().db_connection_info();
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);
+    INFO("[A04] 获取指定聊天会话历史消息接口处理完成, requestId: {}, userId: {}, chatSessionId: {}, 消息数量: {}",
+         request_id, user_id, chat_session_id, message_list.size());
 }
 
-void GatewayServiceImpl::HandleAiDelete(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleAiDelete(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[A05] 删除指定聊天会话接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求体, 提取请求 ID 与会话 ID
+    Json::Value request_json;
+    std::string request_id;
+    if (!ParseJsonBody(request, request_json, request_id))
+    {
+        SendEnvelopeResponse(response, "", kGatewayErrorCodeParams, "请求体 JSON 解析失败或缺少 requestId 字段");
+        return;
+    }
+    std::string session_id = request_json["sessionId"].asString();
+    std::string chat_session_id = request_json["chatSessionId"].asString();
+    if (session_id.empty() || chat_session_id.empty())
+    {
+        ERR("[A05] 请求参数错误, sessionId/chatSessionId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
+                             "请求参数错误 : sessionId/chatSessionId 不能为空");
+        return;
+    }
+
+    // 2. 鉴权, 检查会话是否有效, 失败时透传错误码与错误信息(获取用户 ID 用于校验会话归属)
+    int error_code = 0;
+    std::string error_msg;
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 3. 创建 AI 子服务 RPC 客户端
+    cpp_toolkit::ChannelPtr channel;
+    std::unique_ptr<ai_proto::AIService_Stub> ai_service_stub = CreateAiRpcStub(channel);
+    if (ai_service_stub == nullptr)
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "AI 子服务不可用");
+        return;
+    }
+
+    // 4. 构建 RPC 请求
+    ai_proto::DeleteSessionRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_user_id(user_id);
+    rpc_request.set_chat_session_id(chat_session_id);
+
+    // 5. 调用 AI 子服务的 RPC 接口, 失败时透传错误码与错误信息
+    ai_proto::DeleteSessionResponse rpc_response;
+    if (!CallAiRpc(request_id, ai_service_stub.get(), &ai_proto::AIService_Stub::DeleteSession,
+                   rpc_request, rpc_response, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 6. 构建 HTTP 响应(接口无返回数据, 不携带 result 字段)
+    SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg);
+    INFO("[A05] 删除指定聊天会话接口处理完成, requestId: {}, userId: {}, chatSessionId: {}, errorCode: {}",
+         request_id, user_id, chat_session_id, error_code);
 }
 
 void GatewayServiceImpl::HandleAiSendStreamMessage(const httplib::Request& request, httplib::Response&)

@@ -4,6 +4,7 @@
 #include <string>
 #include <httplib.h>
 #include <cpp-toolkit/rpc.h>
+#include "ai_service.pb.h"
 #include "database_service.pb.h"
 #include "file_service.pb.h"
 #include "user_service.pb.h"
@@ -19,6 +20,9 @@ namespace file_proto = ::chat_excel_proto::file_service;
 
 // 数据库子服务 proto 生成代码所在命名空间的别名, 简化 RPC 客户端类型签名
 namespace db_proto = ::chat_excel_proto::database_service;
+
+// AI 子服务 proto 生成代码所在命名空间的别名, 简化 RPC 客户端类型签名
+namespace ai_proto = ::chat_excel_proto::ai_service;
 
 /**
  * @brief 网关 HTTP 接口定义类, 负责全部 30 个 HTTP 接口的定义与路由绑定
@@ -182,6 +186,13 @@ private:
      * @return 数据库子服务 RPC 客户端存根, 获取信道失败时返回 nullptr
      */
     std::unique_ptr<db_proto::DatabaseService_Stub> CreateDatabaseRpcStub(cpp_toolkit::ChannelPtr& channel);
+
+    /**
+     * @brief 创建 AI 子服务 RPC 客户端存根, 内部获取 AI 子服务信道
+     * @param channel 输出参数, 获取到的 RPC 信道对象(客户端存根依赖信道对象存活, RPC 调用期间须由调用方保持其生命周期)
+     * @return AI 子服务 RPC 客户端存根, 获取信道失败时返回 nullptr
+     */
+    std::unique_ptr<ai_proto::AIService_Stub> CreateAiRpcStub(cpp_toolkit::ChannelPtr& channel);
 
     /**
      * @brief 鉴权辅助函数, 调用用户子服务 ValidSession RPC 接口检查会话是否有效, 并返回会话所属用户 ID
