@@ -104,6 +104,7 @@ add_library(chat_excel_data STATIC
     verifycode_data.cpp
     file_data.cpp
     worksheet_data.cpp
+    chat_session_data.cpp
     ${ODB_CODE_DIR}/user_entity-odb.cxx
     ${ODB_CODE_DIR}/session_entity-odb.cxx
     ${ODB_CODE_DIR}/file_entity-odb.cxx

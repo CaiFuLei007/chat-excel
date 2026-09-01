@@ -77,3 +77,6 @@ add_subdirectory(test/svc_excel_parse_service/excel_parse)
 
 # 数据库子服务驱动层单元测试
 add_subdirectory(test/svc_database_service/driver)
+
+# AI 子服务数据访问层单元测试
+add_subdirectory(test/svc_ai_service/chat_session_data)

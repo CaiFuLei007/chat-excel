@@ -305,6 +305,37 @@ enum class ErrorCode : int
     // 通知子服务内部错误
     NOTIFY_SERVICE_INTERNAL_ERROR = 506,
 
+    // ==================== AI 子服务错误码范围 600 - 699 ====================
+    // 保存聊天会话信息到数据库(INSERT)失败
+    CHAT_SESSION_SAVE_TO_MYSQL_ERROR = 600,
+
+    // 更新数据库中的聊天会话信息(UPDATE)失败
+    CHAT_SESSION_UPDATE_IN_MYSQL_ERROR = 601,
+
+    // 通过会话 ID 获取聊天会话信息失败
+    CHAT_SESSION_GET_BY_SESSION_ID_ERROR = 602,
+
+    // 通过会话 ID 删除聊天会话信息失败
+    CHAT_SESSION_DELETE_BY_SESSION_ID_ERROR = 603,
+
+    // 通过用户 ID 获取聊天会话列表失败
+    CHAT_SESSION_GET_LIST_BY_USER_ID_ERROR = 604,
+
+    // 聊天会话数据不存在
+    CHAT_SESSION_DATA_NOT_FOUND = 605,
+
+    // 聊天会话数据 JSON 序列化或反序列化失败
+    CHAT_SESSION_DATA_SERIALIZE_ERROR = 606,
+
+    // 保存聊天会话数据到缓存失败
+    CHAT_SESSION_SAVE_TO_CACHE_ERROR = 607,
+
+    // 通过会话 ID 从缓存获取聊天会话信息失败
+    CHAT_SESSION_GET_FROM_CACHE_BY_SESSION_ID_ERROR = 608,
+
+    // 通过会话 ID 删除缓存聊天会话信息失败
+    CHAT_SESSION_DELETE_FROM_CACHE_BY_SESSION_ID_ERROR = 609,
+
     // ==================== 子服务错误码范围预留 ====================
     // 文件子服务错误码范围 200 - 299, eg: FILE_NOT_FOUND 文件不存在
     // 数据库子服务错误码范围 300 - 399, eg: DB_CONNECTION_FAILED 数据库连接失败

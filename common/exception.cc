@@ -107,6 +107,16 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::NOTIFY_EMAIL_SUBJECT_EMPTY), "普通邮件主题为空"},
         {static_cast<int>(ErrorCode::NOTIFY_EMAIL_CONTENT_EMPTY), "普通邮件内容为空"},
         {static_cast<int>(ErrorCode::NOTIFY_SERVICE_INTERNAL_ERROR), "通知子服务内部错误"},
+        {static_cast<int>(ErrorCode::CHAT_SESSION_SAVE_TO_MYSQL_ERROR), "保存聊天会话信息到数据库失败"},
+        {static_cast<int>(ErrorCode::CHAT_SESSION_UPDATE_IN_MYSQL_ERROR), "更新数据库中的聊天会话信息失败"},
+        {static_cast<int>(ErrorCode::CHAT_SESSION_GET_BY_SESSION_ID_ERROR), "通过会话 ID 获取聊天会话信息失败"},
+        {static_cast<int>(ErrorCode::CHAT_SESSION_DELETE_BY_SESSION_ID_ERROR), "通过会话 ID 删除聊天会话信息失败"},
+        {static_cast<int>(ErrorCode::CHAT_SESSION_GET_LIST_BY_USER_ID_ERROR), "通过用户 ID 获取聊天会话列表失败"},
+        {static_cast<int>(ErrorCode::CHAT_SESSION_DATA_NOT_FOUND), "聊天会话数据不存在"},
+        {static_cast<int>(ErrorCode::CHAT_SESSION_DATA_SERIALIZE_ERROR), "聊天会话数据 JSON 序列化或反序列化失败"},
+        {static_cast<int>(ErrorCode::CHAT_SESSION_SAVE_TO_CACHE_ERROR), "保存聊天会话数据到缓存失败"},
+        {static_cast<int>(ErrorCode::CHAT_SESSION_GET_FROM_CACHE_BY_SESSION_ID_ERROR), "通过会话 ID 从缓存获取聊天会话信息失败"},
+        {static_cast<int>(ErrorCode::CHAT_SESSION_DELETE_FROM_CACHE_BY_SESSION_ID_ERROR), "通过会话 ID 删除缓存聊天会话信息失败"},
     };
 
     auto iter = kErrorMessageMap.find(static_cast<int>(error_code));

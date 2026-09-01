@@ -44,7 +44,7 @@ ChatSDK 已经实现好了 , 已经安装到系统目录下了, 可以直接进�
 | --- | --- | --- | --- | --- | --- |
 | id | BIGINT UNSIGNED | PRIMARY KEY AUTOINCREMENT | NOT NULL | 自增主键 |
 | chat_session_id | VARCHAR(32) | UNIQUE | NOT NULL | 会话 ID |
-| user_id | VARCHAR(32) | | NOT NULL | 用户 ID |
+| user_id | VARCHAR(32) | INDEX | NOT NULL | 用户 ID |
 | title | TEXT | NULL | 会话标题 , 默认为第一条消息，最长20个字符 |
 | create_time | BIGINT |  | NOT NULL | 创建时间戳 |
 | update_time | BIGINT |  | NOT NULL | 最后更新时间戳 |
