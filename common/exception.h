@@ -378,6 +378,45 @@ enum class ErrorCode : int
     // 提示词模板构建或占位符填充失败
     AI_PROMPT_TEMPLATE_ERROR = 622,
 
+    // AI 子服务请求参数错误 : 网关会话 ID 为空
+    AI_SERVICE_SESSION_ID_EMPTY = 623,
+
+    // AI 子服务请求参数错误 : 聊天类型无效(仅支持 plain / excel / database)
+    AI_SERVICE_CHAT_TYPE_INVALID = 624,
+
+    // AI 子服务请求参数错误 : database 聊天场景缺少数据库连接 ID
+    AI_SERVICE_DB_CONNECT_ID_EMPTY = 625,
+
+    // AI 子服务请求参数错误 : database 聊天场景缺少数据库表名
+    AI_SERVICE_TABLE_NAME_EMPTY = 626,
+
+    // 从模型回复中提取 SQL 语句失败
+    AI_EXTRACT_SQL_ERROR = 627,
+
+    // 文件子服务 RPC 调用失败(获取信道失败或调用超时/失败)
+    AI_FILE_RPC_ERROR = 628,
+
+    // 数据库子服务 RPC 调用失败(获取信道失败或调用超时/失败)
+    AI_DATABASE_RPC_ERROR = 629,
+
+    // 用户子服务 RPC 调用失败(获取信道失败或调用超时/失败)
+    AI_USER_RPC_ERROR = 630,
+
+    // 通知子服务 RPC 调用失败(获取信道失败或调用超时/失败)
+    AI_NOTIFY_RPC_ERROR = 631,
+
+    // 邮件内容 JSON 解析失败
+    AI_EMAIL_CONTENT_PARSE_ERROR = 632,
+
+    // 总结内容 JSON 解析失败
+    AI_SUMMARY_CONTENT_PARSE_ERROR = 633,
+
+    // 历史消息中缺少分析消息或总结消息
+    AI_EMAIL_HISTORY_ERROR = 634,
+
+    // 用户邮箱为空
+    AI_USER_EMAIL_EMPTY = 635,
+
     // ==================== 子服务错误码范围预留 ====================
     // 文件子服务错误码范围 200 - 299, eg: FILE_NOT_FOUND 文件不存在
     // 数据库子服务错误码范围 300 - 399, eg: DB_CONNECTION_FAILED 数据库连接失败

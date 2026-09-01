@@ -28,6 +28,7 @@ using chat_excel_proto::ai_service::UpdateSessionFileRequest;
 using chat_excel_proto::ai_service::UpdateSessionFileResponse;
 // 业务层类型
 using chat_excel::ErrorCode;
+using chat_excel::ai_service::AIMessageHandler;
 using chat_excel::ai_service::AiBusiness;
 using chat_excel::ai_service::AiServiceImpl;
 using chat_excel::ai_service::ChatSessionData;
@@ -124,12 +125,17 @@ protected:
         config.apikey = "test_apikey";
         ASSERT_TRUE(ai_chat_sdk_->RegisterModel(config));
 
-        // 创建聊天会话管理对象, 业务层对象与 RPC 接口实现层对象
+        // 创建聊天会话管理对象, 消息处理对象, 业务层对象与 RPC 接口实现层对象,
+        // 消息处理对象使用空信道管理对象(测试用例不触发跨子服务 RPC 调用),
+        // 提示词模板目录由测试构建配置拷贝到二进制目录, 按默认工作目录加载
         const auto chat_session_data =
             std::make_shared<ChatSessionData>(GetMysqlHandle(), GetRedisHandle());
         chat_session_manager_ = std::make_shared<ChatSessionManager>(chat_session_data);
+        const auto channel_manager = std::make_shared<cpp_toolkit::ChannelManager>();
+        ai_message_handler_ = std::make_shared<AIMessageHandler>(
+            chat_session_manager_, channel_manager, ai_chat_sdk_);
         ai_business_ = std::make_shared<AiBusiness>(chat_session_manager_, ai_chat_sdk_);
-        ai_service_impl_ = std::make_unique<AiServiceImpl>(ai_business_);
+        ai_service_impl_ = std::make_unique<AiServiceImpl>(ai_business_, ai_message_handler_);
     }
 
     void TearDown() override
@@ -137,6 +143,7 @@ protected:
         // 释放各层对象后删除 ChatSDK 本地数据库文件
         ai_service_impl_.reset();
         ai_business_.reset();
+        ai_message_handler_.reset();
         chat_session_manager_.reset();
         ai_chat_sdk_.reset();
         std::remove(kChatSdkDbPath);
@@ -145,6 +152,8 @@ protected:
     std::shared_ptr<aichat_sdk::AIChatSdk> ai_chat_sdk_;
 
     std::shared_ptr<ChatSessionManager> chat_session_manager_;
+
+    std::shared_ptr<AIMessageHandler> ai_message_handler_;
 
     std::shared_ptr<AiBusiness> ai_business_;
 

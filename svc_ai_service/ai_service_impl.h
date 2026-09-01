@@ -3,6 +3,10 @@
 #include <memory>
 #include <google/protobuf/service.h>
 #include "ai_service.pb.h"
+// ai_message_handler.h 须在 ai_business.h 之前导入 :
+// hiredis(sw/redis++ 传递导入)会定义 REDIS_REPLY_STRING 等宏,
+// 若先导入 ai_business.h 再导入 cpp-toolkit/rpc.h 会污染 brpc 的 RedisReplyType 枚举定义
+#include "svc_ai_service/ai_message_handler.h"
 #include "svc_ai_service/ai_business.h"
 
 namespace chat_excel
@@ -23,10 +27,12 @@ class AiServiceImpl : public proto::AIService
 {
 public:
     /**
-     * @brief 构造函数, 注入 AI 业务逻辑对象
+     * @brief 构造函数, 注入 AI 业务逻辑对象与 AI 消息处理对象
      * @param ai_business AI 业务逻辑对象, 由外部构建并管理生命周期
+     * @param ai_message_handler AI 消息处理对象, 由外部构建并管理生命周期
      */
-    explicit AiServiceImpl(std::shared_ptr<AiBusiness> ai_business);
+    AiServiceImpl(std::shared_ptr<AiBusiness> ai_business,
+                  std::shared_ptr<AIMessageHandler> ai_message_handler);
 
     ~AiServiceImpl() override = default;
 
@@ -102,9 +108,29 @@ public:
                                    proto::UpdateSessionFileResponse* response,
                                    google::protobuf::Closure* done) override;
 
+    /**
+     * @brief 发送消息(流式响应), 参数校验失败时通过普通 RPC 响应返回错误码;
+     *        校验通过后建立 brpc 流式信道, 普通 RPC 响应作为请求头(request_id + 成功状态)
+     *        立即返回给网关, 消息处理流程放到后台线程异步执行,
+     *        模型响应与最终结果作为纯文本块通过流式信道实时发送(不在本服务组织 SSE 格式,
+     *        由网关负责包装), done 为 true 时发送完最后一块内容后关闭流式信道;
+     *        处理过程抛出异常时通过流式信道发送错误描述文本后关闭流式信道
+     * @param controller RPC 控制器, 用于建立 brpc 流式信道
+     * @param request RPC 请求, 携带会话, 聊天类型与消息内容等参数
+     * @param response RPC 响应, 作为请求头返回(校验失败时携带错误码)
+     * @param done RPC 结束回调, 由 brpc::ClosureGuard 管理生命周期
+     */
+    virtual void SendMessage(google::protobuf::RpcController* controller,
+                             const proto::SendMessageRequest* request,
+                             proto::SendMessageResponse* response,
+                             google::protobuf::Closure* done) override;
+
 private:
     // AI 业务逻辑对象, 由外部构建并管理生命周期
     std::shared_ptr<AiBusiness> ai_business_;
+
+    // AI 消息处理对象, 由外部构建并管理生命周期
+    std::shared_ptr<AIMessageHandler> ai_message_handler_;
 };
 
 } // namespace ai_service

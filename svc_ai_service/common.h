@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 #include <aichat_sdk/base/common.h>
@@ -8,6 +9,51 @@ namespace chat_excel
 {
 namespace ai_service
 {
+
+/**
+ * @brief 流式输出回调类型, 消息处理过程中通过该回调将模型响应与最终结果实时发送给前端,
+ *        done 为 true 表示本次发送消息流程结束, 回调在 RPC 接口层实现具体的流式写出逻辑
+ * @param content 本次输出的消息片段内容
+ * @param done 本次发送消息流程是否结束
+ */
+using StreamCallback = std::function<void(const std::string& content, bool done)>;
+
+/**
+ * @brief 发送消息上下文结构体, 承载一次发送消息请求的全部参数,
+ *        由 RPC 接口层从 RPC 请求中解析组装
+ */
+struct SendMessageContext
+{
+    // 请求 ID, 用于日志链路追踪
+    std::string request_id;
+
+    // 网关会话 ID, 调用其他子服务 RPC 时原样透传
+    std::string session_id;
+
+    // 用户 ID
+    std::string user_id;
+
+    // AI 聊天会话 ID, 即 ChatSDK 中的会话 ID
+    std::string chat_session_id;
+
+    // 聊天类型: plain / excel / database
+    std::string chat_type;
+
+    // 用户消息内容
+    std::string message;
+
+    // 文件 ID, 仅 excel 场景使用, 为空时使用会话元数据中关联的文件 ID
+    std::string file_id;
+
+    // 数据库类型(数据库场景), 取值与 proto DataType 一致: EXCEL = 0, MYSQL = 1, SQLITE = 2
+    int db_type = 0;
+
+    // 数据库连接 ID, 仅 database 场景使用
+    std::string db_connect_id;
+
+    // 数据库表名列表, 仅 database 场景使用, 由 RPC 请求中的表名字段按逗号拆分
+    std::vector<std::string> table_names;
+};
 
 /**
  * @brief 聊天会话信息结构体, 用于数据层与业务层之间传递聊天会话元信息

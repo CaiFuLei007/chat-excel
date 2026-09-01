@@ -18,5 +18,13 @@ target_link_libraries(ai_service_impl_test PRIVATE
     pthread
 )
 
+# 将提示词模板目录拷贝到测试二进制目录,
+# AIMessageHandler 构造时按可执行文件工作目录加载模板文件
+add_custom_command(TARGET ai_service_impl_test POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${PROJECT_SOURCE_DIR}/svc_ai_service/prompt_template
+            $<TARGET_FILE_DIR:ai_service_impl_test>/prompt_template
+)
+
 # 注册单元测试
 add_test(NAME AiServiceImplTest COMMAND ai_service_impl_test)

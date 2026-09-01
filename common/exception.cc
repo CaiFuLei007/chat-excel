@@ -131,6 +131,19 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::AI_SERVICE_FILE_ID_EMPTY), "AI 子服务请求参数错误 : 文件 ID 为空"},
         {static_cast<int>(ErrorCode::AI_SERVICE_INTERNAL_ERROR), "AI 子服务内部错误"},
         {static_cast<int>(ErrorCode::AI_PROMPT_TEMPLATE_ERROR), "提示词模板构建或占位符填充失败"},
+        {static_cast<int>(ErrorCode::AI_SERVICE_SESSION_ID_EMPTY), "AI 子服务请求参数错误 : 网关会话 ID 为空"},
+        {static_cast<int>(ErrorCode::AI_SERVICE_CHAT_TYPE_INVALID), "AI 子服务请求参数错误 : 聊天类型无效(仅支持 plain / excel / database)"},
+        {static_cast<int>(ErrorCode::AI_SERVICE_DB_CONNECT_ID_EMPTY), "AI 子服务请求参数错误 : database 聊天场景缺少数据库连接 ID"},
+        {static_cast<int>(ErrorCode::AI_SERVICE_TABLE_NAME_EMPTY), "AI 子服务请求参数错误 : database 聊天场景缺少数据库表名"},
+        {static_cast<int>(ErrorCode::AI_EXTRACT_SQL_ERROR), "从模型回复中提取 SQL 语句失败"},
+        {static_cast<int>(ErrorCode::AI_FILE_RPC_ERROR), "文件子服务 RPC 调用失败"},
+        {static_cast<int>(ErrorCode::AI_DATABASE_RPC_ERROR), "数据库子服务 RPC 调用失败"},
+        {static_cast<int>(ErrorCode::AI_USER_RPC_ERROR), "用户子服务 RPC 调用失败"},
+        {static_cast<int>(ErrorCode::AI_NOTIFY_RPC_ERROR), "通知子服务 RPC 调用失败"},
+        {static_cast<int>(ErrorCode::AI_EMAIL_CONTENT_PARSE_ERROR), "邮件内容 JSON 解析失败"},
+        {static_cast<int>(ErrorCode::AI_SUMMARY_CONTENT_PARSE_ERROR), "总结内容 JSON 解析失败"},
+        {static_cast<int>(ErrorCode::AI_EMAIL_HISTORY_ERROR), "历史消息中缺少分析消息或总结消息"},
+        {static_cast<int>(ErrorCode::AI_USER_EMAIL_EMPTY), "用户邮箱为空"},
     };
 
     auto iter = kErrorMessageMap.find(static_cast<int>(error_code));

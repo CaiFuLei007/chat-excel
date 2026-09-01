@@ -20,24 +20,24 @@
 请返回**严格符合JSON格式**的分析报告，包含以下字段（不得有任何额外的文字说明）：
 
 {
-"taskStatus": [
-    {"taskId": 1, "description": "任务描述1", "status": "completed"},
-    {"taskId": 2, "description": "任务描述2", "status": "completed"}
-],
-"keyFindings": [
-    "关键发现1 (数据洞察) ",
-    "关键发现2 (趋势/异常) ",
-    "关键发现3 (业务建议) "
-],
-"summary": "用2-3句话总结整体分析结果和核心价值",
-"chartType": "推荐的图表类型",
-"chartConfig": {
-    "title": "图表标题",
-    "description": "图表说明（可选）",
-    "xAxis": "X轴字段名或列索引",
-    "yAxis": "Y轴字段名或列索引",
-    "legend": "图例字段（如果需要）"
-}
+    "taskStatus": [
+        {"taskId": 1, "description": "任务描述1", "status": "completed"},
+        {"taskId": 2, "description": "任务描述2", "status": "completed"}
+    ],
+    "keyFindings": [
+        "关键发现1 (数据洞察) ",
+        "关键发现2 (趋势/异常) ",
+        "关键发现3 (业务建议) "
+    ],
+    "summary": "用2-3句话总结整体分析结果和核心价值",
+    "chartType": "推荐的图表类型",
+    "chartConfig": {
+        "title": "图表标题",
+        "description": "图表说明（可选）",
+        "xAxis": "X轴字段名或列索引",
+        "yAxis": "Y轴字段名或列索引",
+        "legend": "图例字段（如果需要）"
+    }
 }
 
 ## 各字段说明

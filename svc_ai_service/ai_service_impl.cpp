@@ -1,9 +1,13 @@
 #include "svc_ai_service/ai_service_impl.h"
 
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
+#include <butil/iobuf.h>
 #include <brpc/closure_guard.h>
+#include <brpc/controller.h>
+#include <brpc/stream.h>
 #include <cpp-toolkit/logger.h>
 #include "common/exception.h"
 
@@ -30,10 +34,43 @@ void SetErrorResponse(ResponseType* response, ErrorCode error_code)
     response->set_error_msg(ErrorMessage(error_code));
 }
 
+/**
+ * @brief 按逗号拆分表名字符串, 去除每段首尾空白, 过滤空段
+ * @param table_name_text 逗号分隔的表名字符串
+ * @return 表名列表
+ */
+std::vector<std::string> SplitTableNames(const std::string& table_name_text)
+{
+    std::vector<std::string> table_names;
+    size_t begin = 0;
+    while (begin <= table_name_text.size())
+    {
+        const size_t comma_pos = table_name_text.find(',', begin);
+        const std::string part = (comma_pos == std::string::npos)
+                                     ? table_name_text.substr(begin)
+                                     : table_name_text.substr(begin, comma_pos - begin);
+        // 去除首尾空白后过滤空段, 兼容 "a, b, ," 与尾逗号等写法
+        const size_t first = part.find_first_not_of(" \t");
+        if (first != std::string::npos)
+        {
+            const size_t last = part.find_last_not_of(" \t");
+            table_names.push_back(part.substr(first, last - first + 1));
+        }
+        if (comma_pos == std::string::npos)
+        {
+            break;
+        }
+        begin = comma_pos + 1;
+    }
+    return table_names;
+}
+
 } // namespace
 
-AiServiceImpl::AiServiceImpl(std::shared_ptr<AiBusiness> ai_business)
-    : ai_business_(std::move(ai_business))
+AiServiceImpl::AiServiceImpl(std::shared_ptr<AiBusiness> ai_business,
+                             std::shared_ptr<AIMessageHandler> ai_message_handler)
+    : ai_business_(std::move(ai_business)),
+      ai_message_handler_(std::move(ai_message_handler))
 {
 }
 
@@ -389,6 +426,139 @@ void AiServiceImpl::UpdateSessionFile(google::protobuf::RpcController* /*control
             request->chat_session_id(), request->request_id(), e.what());
         SetErrorResponse(response, ErrorCode::AI_SERVICE_INTERNAL_ERROR);
     }
+}
+
+void AiServiceImpl::SendMessage(google::protobuf::RpcController* controller,
+                                const proto::SendMessageRequest* request,
+                                proto::SendMessageResponse* response,
+                                google::protobuf::Closure* done)
+{
+    // 管理 RPC 响应的内存生命周期, 函数结束析构时自动调用 done->Run() 返回响应
+    brpc::ClosureGuard closure_guard(done);
+
+    // 响应中回填请求 ID, 用于请求与响应的链路追踪
+    response->set_request_id(request->request_id());
+
+    // 参数解析与校验, 逐项校验参数并返回对应的错误码, 便于上层直接定位具体错误;
+    // 校验失败时通过普通 RPC 响应返回错误码, 不建立流式信道
+    if (request->session_id().empty())
+    {
+        ERR("SendMessage 接口请求参数错误, session_id 为空, request_id: {}", request->request_id());
+        SetErrorResponse(response, ErrorCode::AI_SERVICE_SESSION_ID_EMPTY);
+        return;
+    }
+    else if (request->chat_session_id().empty())
+    {
+        ERR("SendMessage 接口请求参数错误, chat_session_id 为空, request_id: {}",
+            request->request_id());
+        SetErrorResponse(response, ErrorCode::AI_SERVICE_CHAT_SESSION_ID_EMPTY);
+        return;
+    }
+    else if (request->chat_type().empty())
+    {
+        ERR("SendMessage 接口请求参数错误, chat_type 为空, request_id: {}", request->request_id());
+        SetErrorResponse(response, ErrorCode::AI_SERVICE_CHAT_TYPE_INVALID);
+        return;
+    }
+    else if (request->chat_type() != "plain" && request->chat_type() != "excel"
+             && request->chat_type() != "database")
+    {
+        ERR("SendMessage 接口请求参数错误, chat_type 无效: {}, request_id: {}",
+            request->chat_type(), request->request_id());
+        SetErrorResponse(response, ErrorCode::AI_SERVICE_CHAT_TYPE_INVALID);
+        return;
+    }
+    else if (request->chat_type() == "database" && request->db_connect_id().empty())
+    {
+        ERR("SendMessage 接口请求参数错误, database 场景缺少数据库连接 ID, request_id: {}",
+            request->request_id());
+        SetErrorResponse(response, ErrorCode::AI_SERVICE_DB_CONNECT_ID_EMPTY);
+        return;
+    }
+    else if (request->chat_type() == "database" && request->table_name().empty())
+    {
+        ERR("SendMessage 接口请求参数错误, database 场景缺少表名, request_id: {}",
+            request->request_id());
+        SetErrorResponse(response, ErrorCode::AI_SERVICE_TABLE_NAME_EMPTY);
+        return;
+    }
+
+    // 组装消息处理上下文, database 场景的表名字段按逗号拆分为表名列表
+    SendMessageContext context;
+    context.request_id = request->request_id();
+    context.session_id = request->session_id();
+    context.user_id = request->user_id();
+    context.chat_session_id = request->chat_session_id();
+    context.chat_type = request->chat_type();
+    context.message = request->message();
+    context.file_id = request->file_id();
+    context.db_type = static_cast<int>(request->db_type());
+    context.db_connect_id = request->db_connect_id();
+    context.table_names = SplitTableNames(request->table_name());
+
+    // 建立 brpc 流式信道, 建立失败时通过普通 RPC 响应返回错误码
+    brpc::Controller* cntl = static_cast<brpc::Controller*>(controller);
+    brpc::StreamId stream_id = brpc::INVALID_STREAM_ID;
+    if (brpc::StreamAccept(&stream_id, *cntl, nullptr) != 0)
+    {
+        ERR("建立流式信道失败, request_id: {}", request->request_id());
+        SetErrorResponse(response, ErrorCode::AI_SERVICE_INTERNAL_ERROR);
+        return;
+    }
+
+    // 设置普通 RPC 响应作为请求头(request_id + 成功状态), 方法返回后立即到达网关,
+    // 流式信道保持连接不关闭, 后续聊天内容通过流式信道异步发送
+    response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
+    response->set_error_msg(ErrorMessage(ErrorCode::SUCCESS));
+
+    // 流式写出回调 : 将聊天内容作为纯文本块通过流式信道发送给网关,
+    // 不在 AI 子服务侧组织 SSE 格式, 由网关负责包装;
+    // done 为 true 表示流程结束, 发送完最后一块内容后关闭流式信道;
+    // 写失败仅记录警告, 不中断消息处理流程
+    auto stream_callback = [stream_id](const std::string& content, bool done)
+    {
+        if (!content.empty())
+        {
+            butil::IOBuf stream_buf;
+            stream_buf.append(content);
+            if (brpc::StreamWrite(stream_id, stream_buf) != 0)
+            {
+                WARN("流式响应消息写出失败, 客户端可能已断开连接");
+            }
+        }
+        if (done)
+        {
+            brpc::StreamClose(stream_id);
+        }
+    };
+
+    // 消息处理流程放到后台线程异步执行, 保证请求头先于聊天内容到达网关;
+    // 上下文与流式回调按值拷贝进线程, 消息处理对象通过 shared_ptr 拷贝保活,
+    // 避免线程运行期间对象被析构导致悬空访问;
+    // 线程分离运行, 生命周期在流式信道关闭后自然结束
+    std::thread handler_thread([handler = ai_message_handler_, context, stream_callback]()
+    {
+        try
+        {
+            // 调用 AI 消息处理对象执行消息发送流程, 模型响应通过流式回调实时发送
+            handler->SendMessage(context, stream_callback);
+        }
+        catch (const ChatExcelException& e)
+        {
+            // 业务处理异常 : 通过流式信道发送错误描述文本后关闭流式信道
+            ERR("SendMessage 接口业务处理异常, request_id: {}, 错误信息: {}",
+                context.request_id, e.what());
+            stream_callback(e.what(), true);
+        }
+        catch (const std::exception& e)
+        {
+            // 非预期异常, 统一按照内部错误进行处理
+            ERR("SendMessage 接口非预期异常, request_id: {}, 错误信息: {}",
+                context.request_id, e.what());
+            stream_callback(ErrorMessage(ErrorCode::AI_SERVICE_INTERNAL_ERROR), true);
+        }
+    });
+    handler_thread.detach();
 }
 
 } // namespace ai_service

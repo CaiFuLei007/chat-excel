@@ -2,7 +2,7 @@
 
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
+#include <vector>
 
 namespace chat_excel
 {
@@ -11,16 +11,18 @@ namespace ai_service
 
 /**
  * @brief 提示词模板类, 负责管理提示词模板与占位符的映射关系,
+ *        占位符列表由外部构造时传入(占位符名称不包含花括号),
  *        通过替换模板中的占位符生成最终发送给模型的提示词
  */
 class PromptTemplate
 {
 public:
     /**
-     * @brief 构造函数, 使用提示词构建提示词模板对象, 并从模板中提取占位符
+     * @brief 构造函数, 使用提示词与外部传入的占位符列表构建提示词模板对象
      * @param template_content 提示词模板内容, 内部包含 {} 包裹的占位符
+     * @param placeholders 模板中的占位符列表, 占位符名称不包含花括号, 例如 user_input
      */
-    explicit PromptTemplate(std::string template_content);
+    PromptTemplate(std::string template_content, std::vector<std::string> placeholders);
 
     ~PromptTemplate() = default;
 
@@ -29,7 +31,7 @@ public:
     PromptTemplate& operator=(const PromptTemplate&) = default;
 
     /**
-     * @brief 设置占位符与实际值的映射关系, 模板中不存在的占位符将被忽略并记录告警日志
+     * @brief 设置占位符与实际值的映射关系, 占位符列表中不存在的占位符将被忽略并记录告警日志
      * @param key 占位符名称(不包含花括号, 例如 user_input)
      * @param value 占位符对应的实际值
      */
@@ -43,16 +45,11 @@ public:
     std::string Generate() const;
 
 private:
-    /**
-     * @brief 从模板内容中提取 {} 包裹的合法标识符占位符并记录到占位符集合中
-     */
-    void ExtractPlaceholders();
-
     // 提示词模板内容
     std::string template_content_;
 
-    // 模板中提取出来的占位符集合
-    std::unordered_set<std::string> placeholder_set_;
+    // 外部传入的占位符列表
+    std::vector<std::string> placeholders_;
 
     // 占位符与实际值的映射关系
     std::unordered_map<std::string, std::string> placeholder_value_map_;

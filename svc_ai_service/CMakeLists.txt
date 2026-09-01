@@ -37,9 +37,11 @@ target_link_libraries(chat_excel_ai_business PUBLIC
 #                         AI 子服务 RPC 接口实现层
 # =================================================================
 
-# AI 子服务 RPC 接口实现层静态库 : protoc 生成服务类的 RPC 接口实现代码
+# AI 子服务 RPC 接口实现层静态库 : protoc 生成服务类的 RPC 接口实现代码,
+# 包含 AI 消息处理类(依赖跨子服务 proto 桩代码与 brpc, 故置于本层)
 add_library(chat_excel_ai_service STATIC
     ai_service_impl.cpp
+    ai_message_handler.cpp
 )
 
 # 头文件搜索路径 :
@@ -89,4 +91,12 @@ target_link_libraries(ai_service PRIVATE
     cpp_toolkit::cpp_toolkit
     gflags
     pthread
+)
+
+# 将提示词模板目录拷贝到可执行文件所在目录,
+# AIMessageHandler 构造时按可执行文件工作目录加载模板文件
+add_custom_command(TARGET ai_service POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_CURRENT_SOURCE_DIR}/prompt_template
+            $<TARGET_FILE_DIR:ai_service>/prompt_template
 )

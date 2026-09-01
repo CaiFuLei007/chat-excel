@@ -11,6 +11,7 @@
 #include <cpp-toolkit/rpc.h>
 #include "data/chat_session_data.h"
 #include "svc_ai_service/ai_business.h"
+#include "svc_ai_service/ai_message_handler.h"
 #include "svc_ai_service/chat_session_manager.h"
 
 namespace chat_excel
@@ -23,6 +24,9 @@ namespace
 
 // 服务监控键前缀, "/" 表示监控全部子服务的上线/下线事件
 constexpr const char* kWatchKeyPrefix = "/";
+
+// 提示词模板文件目录, 相对于可执行文件工作目录
+constexpr const char* kPromptTemplateDir = "prompt_template";
 
 // brpc 服务器停止等待时间(毫秒, 已弃用但需传参)
 constexpr int kServerStopCloseWaitMs = 0;
@@ -178,12 +182,19 @@ std::shared_ptr<AiServer> AiServerBuilder::Build()
         std::make_shared<AiBusiness>(chat_session_manager, ai_chat_sdk);
     INFO("AI 业务逻辑对象构建完成");
 
-    // 8. 创建 RPC 接口实现对象
+    // 8. 创建 AI 消息处理对象(注入会话管理/信道管理/ChatSDK, 构造时加载提示词模板,
+    //    模板文件缺失或读取失败时抛出异常导致构建失败)
+    std::shared_ptr<AIMessageHandler> ai_message_handler =
+        std::make_shared<AIMessageHandler>(chat_session_manager, channel_manager_,
+                                           ai_chat_sdk, kPromptTemplateDir);
+    INFO("AI 消息处理对象构建完成");
+
+    // 9. 创建 RPC 接口实现对象
     //    ServerFactory 使用 SERVER_DOESNT_OWN_SERVICE, 业务对象必须比 server 活得久
-    ai_service_impl_ = std::make_shared<AiServiceImpl>(ai_business);
+    ai_service_impl_ = std::make_shared<AiServiceImpl>(ai_business, ai_message_handler);
     INFO("RPC 接口实现对象构建完成");
 
-    // 9. 创建并启动 brpc 服务器(ServerFactory 内部 AddService + Start, 立即启动)
+    // 10. 创建并启动 brpc 服务器(ServerFactory 内部 AddService + Start, 立即启动)
     server_ = cpp_toolkit::ServerFactory::CreateServer(listen_port_, ai_service_impl_.get());
     if (server_ == nullptr)
     {
@@ -192,7 +203,7 @@ std::shared_ptr<AiServer> AiServerBuilder::Build()
     }
     INFO("brpc 服务器已启动, 监听端口: {}", listen_port_);
 
-    // 10. 创建服务发现(监控)对象, 定义上线/下线回调
+    // 11. 创建服务发现(监控)对象, 定义上线/下线回调
     //     回调以 shared_ptr 值捕获信道管理对象, 保证监控线程生命周期内信道管理对象有效
     cpp_toolkit::ChannelManager::Ptr channel_manager = channel_manager_;
     auto online_callback = [channel_manager](const std::string& service_name,
