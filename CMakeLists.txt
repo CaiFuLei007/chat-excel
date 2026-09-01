@@ -41,6 +41,9 @@ add_subdirectory(svc_file_service)
 # 数据库子服务
 add_subdirectory(svc_database_service)
 
+# AI 子服务
+add_subdirectory(svc_ai_service)
+
 # 查找 gtest 测试框架
 find_package(GTest REQUIRED)
 
@@ -80,3 +83,9 @@ add_subdirectory(test/svc_database_service/driver)
 
 # AI 子服务数据访问层单元测试
 add_subdirectory(test/svc_ai_service/chat_session_data)
+
+# AI 子服务会话管理类单元测试
+add_subdirectory(test/svc_ai_service/chat_session_manager)
+
+# AI 子服务业务逻辑层单元测试
+add_subdirectory(test/svc_ai_service/ai_business)

@@ -336,6 +336,18 @@ enum class ErrorCode : int
     // 通过会话 ID 删除缓存聊天会话信息失败
     CHAT_SESSION_DELETE_FROM_CACHE_BY_SESSION_ID_ERROR = 609,
 
+    // 聊天会话不属于当前用户
+    CHAT_SESSION_USER_MISMATCH = 610,
+
+    // ChatSDK 创建聊天会话失败
+    AI_CHAT_SDK_CREATE_SESSION_ERROR = 611,
+
+    // ChatSDK 删除聊天会话失败
+    AI_CHAT_SDK_REMOVE_SESSION_ERROR = 612,
+
+    // ChatSDK 中聊天会话不存在
+    AI_CHAT_SDK_SESSION_NOT_FOUND = 613,
+
     // ==================== 子服务错误码范围预留 ====================
     // 文件子服务错误码范围 200 - 299, eg: FILE_NOT_FOUND 文件不存在
     // 数据库子服务错误码范围 300 - 399, eg: DB_CONNECTION_FAILED 数据库连接失败

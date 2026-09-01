@@ -150,15 +150,17 @@ private:
     unsigned long long id_;
 
     // 聊天会话 ID, 全系统唯一
+    // 会话 ID 由 ChatSDK 生成, 格式为 {user_id}_{微秒时间戳}, 长度约 53 字符, 列宽取 64
     // unique 约束自动创建唯一索引, 保证字段唯一性的同时支持快速查找会话信息
 #ifdef ODB_COMPILER
-#pragma db column("chat_session_id") type("VARCHAR(32)") unique
+#pragma db column("chat_session_id") type("VARCHAR(64)") unique
 #endif
     std::string chat_session_id_;
 
     // 会话所属用户 ID, 普通索引用于快速查找用户的聊天会话列表
+    // 用户 ID 为 36 字符的 UUIDv4(带连字符), 列宽取 64
 #ifdef ODB_COMPILER
-#pragma db column("user_id") type("VARCHAR(32)") not_null
+#pragma db column("user_id") type("VARCHAR(64)") not_null
 #pragma db index
 #endif
     std::string user_id_;

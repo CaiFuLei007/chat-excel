@@ -117,6 +117,10 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::CHAT_SESSION_SAVE_TO_CACHE_ERROR), "保存聊天会话数据到缓存失败"},
         {static_cast<int>(ErrorCode::CHAT_SESSION_GET_FROM_CACHE_BY_SESSION_ID_ERROR), "通过会话 ID 从缓存获取聊天会话信息失败"},
         {static_cast<int>(ErrorCode::CHAT_SESSION_DELETE_FROM_CACHE_BY_SESSION_ID_ERROR), "通过会话 ID 删除缓存聊天会话信息失败"},
+        {static_cast<int>(ErrorCode::CHAT_SESSION_USER_MISMATCH), "聊天会话不属于当前用户"},
+        {static_cast<int>(ErrorCode::AI_CHAT_SDK_CREATE_SESSION_ERROR), "ChatSDK 创建聊天会话失败"},
+        {static_cast<int>(ErrorCode::AI_CHAT_SDK_REMOVE_SESSION_ERROR), "ChatSDK 删除聊天会话失败"},
+        {static_cast<int>(ErrorCode::AI_CHAT_SDK_SESSION_NOT_FOUND), "ChatSDK 中聊天会话不存在"},
     };
 
     auto iter = kErrorMessageMap.find(static_cast<int>(error_code));

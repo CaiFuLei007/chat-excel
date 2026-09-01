@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+#include <vector>
+#include <aichat_sdk/base/common.h>
 
 namespace chat_excel
 {
@@ -44,6 +46,21 @@ struct ChatSessionInfo
     // 数据库连接信息, 仅 database 类型会话使用, 空串语义为无数据库连接信息
     std::string connection_info;
 };
+
+/**
+ * @brief 聊天会话历史消息结构体, 用于业务层返回指定聊天会话的元数据与历史消息,
+ *        元数据来自 AI 子服务的 MySQL 数据库, 历史消息来自 ChatSDK 的本地存储;
+ *        该结构体依赖 aichat_sdk 的类型, 定义在 aichat_sdk.h 包含之后
+ */
+struct ChatSessionHistory
+{
+    // 聊天会话元数据
+    ChatSessionInfo chat_session_info;
+
+    // 会话的历史消息列表
+    std::vector<aichat_sdk::Message> messages;
+};
+
 
 } // namespace ai_service
 } // namespace chat_excel
