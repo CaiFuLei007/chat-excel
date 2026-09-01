@@ -83,8 +83,9 @@ DEFINE_string(service_name, "AIService", "AI 子服务名称");
 DEFINE_string(service_addr, "127.0.0.1:8085", "AI 子服务注册地址");
 
 // 需要监控的子服务名称列表(逗号分隔), 用户子服务提供用户邮箱信息,
-// 数据库子服务提供 Excel 对应的数据库表列表, 通知子服务负责邮件发送
-DEFINE_string(care_service_names, "UserService,DataBaseService,NotifyService",
+// 数据库子服务提供 Excel 对应的数据库表列表, 通知子服务负责邮件发送,
+// 文件子服务会调用 AI 子服务的 UpdateSessionFile 接口更新会话文件映射表
+DEFINE_string(care_service_names, "UserService,DataBaseService,NotifyService,FileService",
               "需要监控的子服务名称列表(逗号分隔)");
 
 // 服务注册 TTL(秒)

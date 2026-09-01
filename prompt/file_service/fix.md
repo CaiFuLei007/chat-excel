@@ -75,6 +75,9 @@ UserBusiness::Logout 需要增加删除用户所有数据库连接的操作
 1. 完成 TODO , 通过数据库子服务, 从数据库中获取 Excel 文件 WorkSheet 数据表数据
 2. 数据库子服务 RPC 接口参考 : chat-excel/proto/database_service.proto
 
+## 9. 结合 AI 子服务 , 完善 文件子服务的 RPC 接口
+1. 完善  FileBusiness::HandleFileChatSessionMap 方法 , 完成 TODO , 调用 AI 子服务的 UpdateSessionFile RPC 方法, 传入 file_id 和 chat_session_id, 由 AI 子服务更新会话文件映射表
+
 
 ## 补充
 

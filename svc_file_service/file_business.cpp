@@ -10,6 +10,7 @@
 #include <brpc/controller.h>
 #include <cpp-toolkit/logger.h>
 #include <cpp-toolkit/util.h>
+#include <ai_service.pb.h>
 #include <database_service.pb.h>
 #include <excel_parse_service.pb.h>
 #include <file_service.pb.h>
@@ -25,6 +26,7 @@ namespace file_service
 
 namespace proto = ::chat_excel_proto::excel_parse_service;
 namespace db_proto = ::chat_excel_proto::database_service;
+namespace ai_proto = ::chat_excel_proto::ai_service;
 
 namespace
 {
@@ -35,6 +37,9 @@ constexpr const char* kExcelParseServiceName = "ExcelParseService";
 // 数据库子服务名称, 用于从信道管理对象获取通信信道
 constexpr const char* kDatabaseServiceName = "DataBaseService";
 
+// AI 子服务名称, 用于从信道管理对象获取通信信道
+constexpr const char* kAiServiceName = "AIService";
+
 // Excel 数据库全局连接 ID, 数据库子服务启动时创建并登记该全局连接,
 // Excel 解析数据的保存与预览查询均通过该连接进行
 constexpr const char* kExcelDbConnectionId = "excel_connection";
@@ -44,6 +49,9 @@ constexpr int kExcelParseRpcTimeoutMs = 30 * 1000;
 
 // 数据库子服务 RPC 调用超时时间(毫秒), Excel 数据导入耗时较长, 设置 30 秒
 constexpr int kDatabaseRpcTimeoutMs = 30 * 1000;
+
+// AI 子服务 RPC 调用超时时间(毫秒), 更新会话文件映射为轻量操作, 设置 3 秒
+constexpr int kAiServiceRpcTimeoutMs = 3 * 1000;
 
 /**
  * @brief 清洗表名中的非法字符, 字母/数字/汉字/下划线原样保留, 其余字符替换为下划线
@@ -333,6 +341,62 @@ db_proto::TableSchemaInfo GetTableDataFromDatabase(
     return rpc_response.result().table_schema();
 }
 
+/**
+ * @brief 调用 AI 子服务 RPC 接口更新会话文件映射表,
+ *        传入文件 ID 与聊天会话 ID, 由 AI 子服务更新聊天会话元数据的 file_id 字段
+ * @param channel_manager RPC 信道管理对象
+ * @param request_id 请求 ID, 用于日志链路追踪
+ * @param user_id 用户 ID
+ * @param chat_session_id 聊天会话 ID
+ * @param file_id 文件 ID
+ */
+void UpdateSessionFileFromRpc(const cpp_toolkit::ChannelManager::Ptr& channel_manager,
+                              const std::string& request_id, const std::string& user_id,
+                              const std::string& chat_session_id, const std::string& file_id)
+{
+    // 通过信道管理对象获取 AI 子服务通信信道
+    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(kAiServiceName);
+    if (channel == nullptr)
+    {
+        ERR("获取 AI 子服务信道失败, request_id: {}, 服务名称: {}", request_id, kAiServiceName);
+        throw ChatExcelException(ErrorCode::FILE_AI_RPC_ERROR);
+    }
+
+    // 构建 RPC 请求并同步调用更新会话文件关联接口
+    ai_proto::UpdateSessionFileRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_user_id(user_id);
+    rpc_request.set_chat_session_id(chat_session_id);
+    rpc_request.set_file_id(file_id);
+
+    ai_proto::AIService_Stub ai_service_stub(channel.get());
+    brpc::Controller controller;
+    controller.set_timeout_ms(kAiServiceRpcTimeoutMs);
+    ai_proto::UpdateSessionFileResponse rpc_response;
+    ai_service_stub.UpdateSessionFile(&controller, &rpc_request, &rpc_response, nullptr);
+
+    // 检测 RPC 调用是否成功(网络/超时/信道层面的失败)
+    if (controller.Failed())
+    {
+        ERR("AI 子服务 RPC 调用失败, request_id: {}, chat_session_id: {}, file_id: {}, 错误信息: {}",
+            request_id, chat_session_id, file_id, controller.ErrorText());
+        throw ChatExcelException(ErrorCode::FILE_AI_RPC_ERROR);
+    }
+
+    // 检测 AI 子服务业务处理结果, 业务错误码透传给上层调用方
+    if (rpc_response.error_code() != static_cast<int>(ErrorCode::SUCCESS))
+    {
+        ERR("更新会话文件映射表失败, request_id: {}, chat_session_id: {}, file_id: {}, "
+            "错误码: {}, 错误信息: {}",
+            request_id, chat_session_id, file_id, rpc_response.error_code(),
+            rpc_response.error_msg());
+        throw ChatExcelException(static_cast<ErrorCode>(rpc_response.error_code()));
+    }
+
+    INFO("更新会话文件映射表成功, request_id: {}, chat_session_id: {}, file_id: {}",
+         request_id, chat_session_id, file_id);
+}
+
 } // namespace
 
 FileBusiness::FileBusiness(std::shared_ptr<FileData> file_data,
@@ -605,6 +669,10 @@ void FileBusiness::HandleFileChatSessionMap(const std::string& request_id, const
     file_data_->DeleteFileByFileIdFromCache(file_info.file_id);
     INFO("关联文件和聊天会话成功, request_id: {}, file_id: {}, 会话 ID: {}",
          request_id, file_info.file_id, chat_session_id);
+
+    // 调用 AI 子服务更新会话文件映射表(聊天会话元数据的 file_id 字段)
+    UpdateSessionFileFromRpc(channel_manager_, request_id, user_id, chat_session_id,
+                             file_info.file_id);
 }
 
 std::vector<WorkSheetInfo> FileBusiness::GetWorkSheetsWithCache(const std::string& request_id,

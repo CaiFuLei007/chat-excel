@@ -176,6 +176,9 @@ enum class ErrorCode : int
     // 数据库子服务 RPC 调用失败(获取信道失败或调用超时/失败)
     FILE_DATABASE_RPC_ERROR = 234,
 
+    // AI 子服务 RPC 调用失败(获取信道失败或调用超时/失败)
+    FILE_AI_RPC_ERROR = 235,
+
     // ==================== 数据库子服务错误码范围 300 - 399 ====================
     // 数据库连接失败
     DB_CONNECTION_FAILED = 300,

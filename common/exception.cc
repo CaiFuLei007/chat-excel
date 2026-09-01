@@ -65,6 +65,7 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::FILE_SERVICE_PAGE_SIZE_ERROR), "文件子服务请求参数错误 : 预览每页行数无效(每页行数从 1 开始)"},
         {static_cast<int>(ErrorCode::FILE_SERVICE_INTERNAL_ERROR), "文件子服务内部错误"},
         {static_cast<int>(ErrorCode::FILE_DATABASE_RPC_ERROR), "数据库子服务 RPC 调用失败"},
+        {static_cast<int>(ErrorCode::FILE_AI_RPC_ERROR), "AI 子服务 RPC 调用失败"},
         {static_cast<int>(ErrorCode::DB_CONNECTION_FAILED), "数据库连接失败"},
         {static_cast<int>(ErrorCode::DB_DISCONNECT_FAILED), "数据库断开连接失败"},
         {static_cast<int>(ErrorCode::DB_NOT_CONNECTED), "数据库尚未建立连接"},

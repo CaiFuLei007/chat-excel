@@ -10,6 +10,7 @@
 #include <cpp-toolkit/odb.h>
 #include <cpp-toolkit/rpc.h>
 #include <cpp-toolkit/redis.h>
+#include <ai_service.pb.h>
 #include <database_service.pb.h>
 #include <excel_parse_service.pb.h>
 #include <file_service.pb.h>
@@ -38,6 +39,7 @@ namespace
 // proto 生成类型命名空间别名
 namespace proto = ::chat_excel_proto::excel_parse_service;
 namespace db_proto = ::chat_excel_proto::database_service;
+namespace ai_proto = ::chat_excel_proto::ai_service;
 
 // mock Excel 解析子服务监听端口
 constexpr int kExcelParseMockServerPort = 28992;
@@ -50,6 +52,12 @@ constexpr int kDatabaseMockServerPort = 28993;
 
 // 数据库子服务名称(与 FileBusiness 实现中的常量保持一致)
 constexpr const char* kDatabaseServiceName = "DataBaseService";
+
+// mock AI 子服务监听端口
+constexpr int kAiServiceMockServerPort = 28994;
+
+// AI 子服务名称(与 FileBusiness 实现中的常量保持一致)
+constexpr const char* kAiServiceName = "AIService";
 
 // Excel 数据库全局连接 ID(与数据库子服务连接管理器中的全局连接 ID 保持一致)
 constexpr const char* kExcelDbConnectionId = "excel_connection";
@@ -327,6 +335,54 @@ const std::string& GetDatabaseMockServerAddr()
 }
 
 /**
+ * @brief mock AI 子服务 : 校验更新会话文件关联请求参数非空,
+ *        UpdateSessionFile 返回成功, 其余接口使用基类默认实现
+ */
+class MockAIServiceImpl : public ai_proto::AIService
+{
+public:
+    void UpdateSessionFile(google::protobuf::RpcController* /*controller*/,
+                           const ai_proto::UpdateSessionFileRequest* request,
+                           ai_proto::UpdateSessionFileResponse* response,
+                           google::protobuf::Closure* done) override
+    {
+        brpc::ClosureGuard closure_guard(done);
+        response->set_request_id(request->request_id());
+
+        // 校验业务层传递的用户 ID/会话 ID/文件 ID 非空
+        if (request->user_id().empty() || request->chat_session_id().empty() ||
+            request->file_id().empty())
+        {
+            response->set_error_code(static_cast<int>(ErrorCode::AI_SERVICE_INTERNAL_ERROR));
+            response->set_error_msg("mock: 更新会话文件关联请求参数为空");
+            return;
+        }
+
+        response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
+    }
+};
+
+/**
+ * @brief 获取 mock AI 子服务监听地址, 服务器进程内只启动一次
+ * @return "ip:port" 格式的监听地址字符串
+ */
+const std::string& GetAiMockServerAddr()
+{
+    static const std::string server_addr = [] {
+        static MockAIServiceImpl ai_service_impl;
+        static brpc::Server server;
+        brpc::ServerOptions server_options;
+        server.AddService(&ai_service_impl, brpc::SERVER_DOESNT_OWN_SERVICE);
+        if (server.Start(kAiServiceMockServerPort, &server_options) != 0)
+        {
+            GTEST_LOG_(FATAL) << "mock AI 子服务启动失败, 端口: " << kAiServiceMockServerPort;
+        }
+        return "127.0.0.1:" + std::to_string(kAiServiceMockServerPort);
+    }();
+    return server_addr;
+}
+
+/**
  * @brief 断言业务调用抛出指定错误码的异常
  * @param call 业务调用 lambda
  * @param expected_code 期望的错误码
@@ -364,13 +420,16 @@ protected:
         // 初始化 FastDFS 客户端, 连接本地 docker 容器
         InitFdfsClient();
 
-        // 构建信道管理对象, 注册关心服务后添加 mock Excel 解析子服务与
-        // mock 数据库子服务地址(AddService 只对 SetCareService 预注册的关心服务生效)
+        // 构建信道管理对象, 注册关心服务后添加 mock Excel 解析子服务、
+        // mock 数据库子服务与 mock AI 子服务地址
+        // (AddService 只对 SetCareService 预注册的关心服务生效)
         channel_manager_ = std::make_shared<cpp_toolkit::ChannelManager>();
         channel_manager_->SetCareService(kExcelParseServiceName);
         channel_manager_->AddService(kExcelParseServiceName, GetExcelParseMockServerAddr());
         channel_manager_->SetCareService(kDatabaseServiceName);
         channel_manager_->AddService(kDatabaseServiceName, GetDatabaseMockServerAddr());
+        channel_manager_->SetCareService(kAiServiceName);
+        channel_manager_->AddService(kAiServiceName, GetAiMockServerAddr());
 
         // 构建文件业务逻辑对象, 依赖对象全部由外部注入
         const std::shared_ptr<FileData> file_data =
