@@ -375,6 +375,9 @@ enum class ErrorCode : int
     // AI 子服务内部错误
     AI_SERVICE_INTERNAL_ERROR = 621,
 
+    // 提示词模板构建或占位符填充失败
+    AI_PROMPT_TEMPLATE_ERROR = 622,
+
     // ==================== 子服务错误码范围预留 ====================
     // 文件子服务错误码范围 200 - 299, eg: FILE_NOT_FOUND 文件不存在
     // 数据库子服务错误码范围 300 - 399, eg: DB_CONNECTION_FAILED 数据库连接失败

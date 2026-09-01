@@ -12,10 +12,11 @@ find_package(cpp_toolkit REQUIRED)
 # gflags 命令行参数解析库(main.cc 直接使用 gflags 符号, 显式声明不依赖传递导入)
 find_package(gflags REQUIRED)
 
-# AI 子服务业务逻辑静态库 : 聊天会话管理类 + AI 业务逻辑类实现代码
+# AI 子服务业务逻辑静态库 : 聊天会话管理类 + AI 业务逻辑类 + 提示词模板类实现代码
 add_library(chat_excel_ai_business STATIC
     chat_session_manager.cpp
     ai_business.cpp
+    prompt_template.cpp
 )
 
 # 头文件搜索路径 :

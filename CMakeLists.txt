@@ -92,3 +92,6 @@ add_subdirectory(test/svc_ai_service/ai_business)
 
 # AI 子服务 RPC 接口实现层单元测试
 add_subdirectory(test/svc_ai_service/ai_service_impl)
+
+# AI 子服务提示词模板类单元测试
+add_subdirectory(test/svc_ai_service/prompt_template)

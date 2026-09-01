@@ -130,6 +130,7 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::AI_SERVICE_DB_CONNECTION_INFO_EMPTY), "AI 子服务请求参数错误 : database 类型会话缺少数据库连接信息"},
         {static_cast<int>(ErrorCode::AI_SERVICE_FILE_ID_EMPTY), "AI 子服务请求参数错误 : 文件 ID 为空"},
         {static_cast<int>(ErrorCode::AI_SERVICE_INTERNAL_ERROR), "AI 子服务内部错误"},
+        {static_cast<int>(ErrorCode::AI_PROMPT_TEMPLATE_ERROR), "提示词模板构建或占位符填充失败"},
     };
 
     auto iter = kErrorMessageMap.find(static_cast<int>(error_code));
