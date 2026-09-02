@@ -76,7 +76,7 @@ private:
 /**
  * @brief 网关服务器构建器类, 负责网关服务器与服务发现组件的分步构建
  *        构建流程 : 服务信道管理对象 -> 服务发现(监控)对象 -> 服务监控线程
- *        -> HTTP 接口定义对象 -> HTTP 服务器对象 -> 路由绑定 -> 网关服务器对象 -> 启动服务器
+ *        -> HTTP 接口定义对象 -> HTTP 服务器对象 -> 路由绑定 -> 静态文件托管 -> 网关服务器对象 -> 启动服务器
  *        各构建方法返回构建器自身引用, 支持链式调用, 最后调用 StartServer 获取网关服务器对象
  *        使用方式 : GatewayServerBuilder()
  *                     .BuildChannelManager(care_service_names)
@@ -134,6 +134,14 @@ public:
      * @return 构建器自身引用, 支持链式调用
      */
     GatewayServerBuilder& BindRoutes();
+
+    /**
+     * @brief 托管前端静态文件目录, 将其挂载到站点根路径上
+     *        已注册的 API 路由优先于静态文件匹配(cpp-httplib 先匹配路由, 未命中时再查找挂载目录)
+     * @param www_root 前端静态文件根目录(相对或绝对路径), 空字符串表示不托管静态文件
+     * @return 构建器自身引用, 支持链式调用
+     */
+    GatewayServerBuilder& BuildStaticFiles(const std::string& www_root);
 
     /**
      * @brief 构建网关服务器对象

@@ -174,6 +174,25 @@ GatewayServerBuilder& GatewayServerBuilder::BindRoutes()
     return *this;
 }
 
+GatewayServerBuilder& GatewayServerBuilder::BuildStaticFiles(const std::string& www_root)
+{
+    // 空字符串表示不托管静态文件, 保持纯 API 网关模式
+    if (www_root.empty())
+    {
+        INFO("未配置前端静态文件目录, 网关以纯 API 模式运行");
+        return *this;
+    }
+
+    // 挂载前端静态文件目录到站点根路径, 目录不存在时挂载失败仅记录警告, 不阻断启动
+    if (!http_server_->set_mount_point("/", www_root))
+    {
+        WARN("前端静态文件目录挂载失败, 目录: {} , 请检查路径是否存在", www_root);
+        return *this;
+    }
+    INFO("前端静态文件目录挂载完成, 目录: {}", www_root);
+    return *this;
+}
+
 GatewayServerBuilder& GatewayServerBuilder::BuildGatewayServer(const std::string& host, int port)
 {
     // 构建网关服务器对象

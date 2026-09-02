@@ -22,6 +22,9 @@ DEFINE_string(gateway_address, "0.0.0.0", "网关服务器监听地址");
 // 网关服务器监听端口
 DEFINE_int32(gateway_port, 8080, "网关服务器监听端口");
 
+// 前端静态文件根目录, 网关将其挂载到站点根路径, 空字符串表示不托管静态文件
+DEFINE_string(www_root, "www", "前端静态文件根目录(相对或绝对路径), 空字符串表示不托管静态文件");
+
 // ETCD 注册中心地址
 DEFINE_string(etcd_address, "http://127.0.0.1:2379", "ETCD 注册中心地址");
 
@@ -123,7 +126,7 @@ int main(int argc, char* argv[])
          care_service_names[0], care_service_names[1], care_service_names[2], care_service_names[3]);
 
     // 5/6. 使用构建器链式构建网关服务器对象并启动服务器
-    //      构建流程 : 服务信道管理 -> 服务发现 -> 服务监控 -> HTTP 接口定义 -> HTTP 服务器 -> 路由绑定 -> 网关服务器对象 -> 启动
+    //      构建流程 : 服务信道管理 -> 服务发现 -> 服务监控 -> HTTP 接口定义 -> HTTP 服务器 -> 路由绑定 -> 静态文件托管 -> 网关服务器对象 -> 启动
     std::shared_ptr<chat_excel::GatewayServer> gateway_server =
         chat_excel::GatewayServerBuilder()
             .BuildChannelManager(care_service_names)
@@ -132,6 +135,7 @@ int main(int argc, char* argv[])
             .BuildHttpServiceImpl()
             .BuildHttpServer()
             .BindRoutes()
+            .BuildStaticFiles(FLAGS_www_root)
             .BuildGatewayServer(FLAGS_gateway_address, FLAGS_gateway_port)
             .StartServer();
     if (gateway_server == nullptr)
