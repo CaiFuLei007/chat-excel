@@ -2379,11 +2379,11 @@ void GatewayServiceImpl::HandleAiSessionCreate(const httplib::Request& request, 
             return;
         }
     }
-    else if (session_type != "excel")
+    else if (session_type != "excel" && session_type != "plain")
     {
         ERR("[A02] 请求参数错误, sessionType 无效: {}, requestId: {}", session_type, request_id);
         SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
-                             "请求参数错误 : sessionType 仅支持 excel/database");
+                             "请求参数错误 : sessionType 仅支持 excel/database/plain");
         return;
     }
 
