@@ -11,3 +11,8 @@ HTTP 请求参数中不需要再传入用户 ID , 直接通过会话 ID 获取�
 修改:
 1. 修改网关 API.md 文档
 2. 修改 GatewayServiceImpl::HandleUserInfo 方法 
+
+
+## 2. GatewayServiceImpl::HandleAiSessionCreate 支持创建 plain 会话
+
+1. 校验参数类型的时候新增 plain 类型, 会话类型只能是 excel , database , plain
