@@ -109,15 +109,15 @@ public:
                                    google::protobuf::Closure* done) override;
 
     /**
-     * @brief 发送消息(流式响应), 参数校验失败时通过普通 RPC 响应返回错误码;
-     *        校验通过后建立 brpc 流式信道, 普通 RPC 响应作为请求头(request_id + 成功状态)
-     *        立即返回给网关, 消息处理流程放到后台线程异步执行,
-     *        模型响应与最终结果作为纯文本块通过流式信道实时发送(不在本服务组织 SSE 格式,
-     *        由网关负责包装), done 为 true 时发送完最后一块内容后关闭流式信道;
-     *        处理过程抛出异常时通过流式信道发送错误描述文本后关闭流式信道
-     * @param controller RPC 控制器, 用于建立 brpc 流式信道
+     * @brief 发送消息(流式响应), 参数校验失败时通过普通 HTTP JSON 响应返回错误码;
+     *        校验通过后设置 HTTP 流式响应头并创建流式响应附件, done->Run() 触达后
+     *        HTTP 响应头(分块传输)立即返回给网关, 消息处理流程放到后台线程异步执行,
+     *        模型响应与最终结果作为纯文本块通过流式响应附件实时发送(不在本服务组织 SSE 格式,
+     *        由网关负责包装), done 为 true 时发送完最后一块内容后释放流式响应附件结束连接;
+     *        处理过程抛出异常时通过流式响应附件发送错误描述文本后结束连接
+     * @param controller RPC 控制器, 用于设置 HTTP 响应头并创建流式响应附件
      * @param request RPC 请求, 携带会话, 聊天类型与消息内容等参数
-     * @param response RPC 响应, 作为请求头返回(校验失败时携带错误码)
+     * @param response RPC 响应, 校验失败时携带错误码, 成功时仅携带成功状态
      * @param done RPC 结束回调, 由 brpc::ClosureGuard 管理生命周期
      */
     virtual void SendMessage(google::protobuf::RpcController* controller,

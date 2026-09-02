@@ -4,10 +4,9 @@
 #include <thread>
 #include <utility>
 #include <vector>
-#include <butil/iobuf.h>
 #include <brpc/closure_guard.h>
 #include <brpc/controller.h>
-#include <brpc/stream.h>
+#include <brpc/progressive_attachment.h>
 #include <cpp-toolkit/logger.h>
 #include "common/exception.h"
 
@@ -496,47 +495,53 @@ void AiServiceImpl::SendMessage(google::protobuf::RpcController* controller,
     context.db_connect_id = request->db_connect_id();
     context.table_names = SplitTableNames(request->table_name());
 
-    // 建立 brpc 流式信道, 建立失败时通过普通 RPC 响应返回错误码
+    // 流式响应基于 HTTP 分块传输实现(网关以 HTTP 方式路由发送消息请求),
+    // 设置 HTTP 流式响应头, 开启分块传输并允许前端跨域接收
     brpc::Controller* cntl = static_cast<brpc::Controller*>(controller);
-    brpc::StreamId stream_id = brpc::INVALID_STREAM_ID;
-    if (brpc::StreamAccept(&stream_id, *cntl, nullptr) != 0)
+    cntl->http_response().set_content_type("text/event-stream");
+    cntl->http_response().SetHeader("Cache-Control", "no-cache");
+    cntl->http_response().SetHeader("Connection", "keep-alive");
+    cntl->http_response().SetHeader("Access-Control-Allow-Origin", "*");
+    cntl->http_response().SetHeader("Access-Control-Allow-Headers", "*");
+
+    // 创建流式响应附件, 非 HTTP 协议请求不支持流式响应, 返回内部错误
+    butil::intrusive_ptr<brpc::ProgressiveAttachment> progressive_attachment =
+        cntl->CreateProgressiveAttachment();
+    if (progressive_attachment == nullptr)
     {
-        ERR("建立流式信道失败, request_id: {}", request->request_id());
+        ERR("建立流式响应失败, 请求协议不支持流式响应, request_id: {}", request->request_id());
         SetErrorResponse(response, ErrorCode::AI_SERVICE_INTERNAL_ERROR);
         return;
     }
 
-    // 设置普通 RPC 响应作为请求头(request_id + 成功状态), 方法返回后立即到达网关,
-    // 流式信道保持连接不关闭, 后续聊天内容通过流式信道异步发送
+    // 设置普通 RPC 响应作为响应头(request_id + 成功状态), done->Run() 触达后
+    // HTTP 响应头立即到达网关, 连接保持不关闭, 后续聊天内容通过流式响应附件异步发送
     response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
     response->set_error_msg(ErrorMessage(ErrorCode::SUCCESS));
 
-    // 流式写出回调 : 将聊天内容作为纯文本块通过流式信道发送给网关,
+    // 流式写出回调 : 将聊天内容作为纯文本块通过流式响应附件发送给网关,
     // 不在 AI 子服务侧组织 SSE 格式, 由网关负责包装;
-    // done 为 true 表示流程结束, 发送完最后一块内容后关闭流式信道;
+    // done 为 true 表示流程结束, 释放流式响应附件后自动补发分块结束标记并关闭连接;
     // 写失败仅记录警告, 不中断消息处理流程
-    auto stream_callback = [stream_id](const std::string& content, bool done)
+    auto stream_callback = [progressive_attachment](const std::string& content, bool done) mutable
     {
-        if (!content.empty())
+        if (!content.empty() &&
+            progressive_attachment->Write(content.data(), content.size()) != 0)
         {
-            butil::IOBuf stream_buf;
-            stream_buf.append(content);
-            if (brpc::StreamWrite(stream_id, stream_buf) != 0)
-            {
-                WARN("流式响应消息写出失败, 客户端可能已断开连接");
-            }
+            WARN("流式响应消息写出失败, 客户端可能已断开连接");
         }
         if (done)
         {
-            brpc::StreamClose(stream_id);
+            // 释放流式响应附件, 结束分块传输并关闭连接
+            progressive_attachment = nullptr;
         }
     };
 
     // 消息处理流程放到后台线程异步执行, 保证请求头先于聊天内容到达网关;
     // 上下文与流式回调按值拷贝进线程, 消息处理对象通过 shared_ptr 拷贝保活,
     // 避免线程运行期间对象被析构导致悬空访问;
-    // 线程分离运行, 生命周期在流式信道关闭后自然结束
-    std::thread handler_thread([handler = ai_message_handler_, context, stream_callback]()
+    // 线程分离运行, 生命周期在流式响应附件释放后自然结束
+    std::thread handler_thread([handler = ai_message_handler_, context, stream_callback]() mutable
     {
         try
         {
@@ -545,7 +550,7 @@ void AiServiceImpl::SendMessage(google::protobuf::RpcController* controller,
         }
         catch (const ChatExcelException& e)
         {
-            // 业务处理异常 : 通过流式信道发送错误描述文本后关闭流式信道
+            // 业务处理异常 : 通过流式响应附件发送错误描述文本后结束连接
             ERR("SendMessage 接口业务处理异常, request_id: {}, 错误信息: {}",
                 context.request_id, e.what());
             stream_callback(e.what(), true);

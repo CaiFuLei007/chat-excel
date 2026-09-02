@@ -1,6 +1,7 @@
 #include "gateway_impl_service.h"
 #include <ctime>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <brpc/controller.h>
 #include <httplib.h>
@@ -52,6 +53,21 @@ constexpr int kFileRpcTimeoutMilliseconds = 30 * 1000;
 
 // AI 子服务 RPC 调用超时时间(毫秒), 模型列表/会话管理均为轻量操作
 constexpr int kAiRpcTimeoutMilliseconds = 3000;
+
+// [A06] AI 子服务发送消息 HTTP 接口路径, brpc 以"服务全名/方法名"匹配 HTTP 请求
+constexpr char kAiSendMessageHttpPath[] = "/chat_excel_proto.ai_service.AIService/SendMessage";
+
+// [A06] AI 子服务 HTTP 客户端读超时时间(秒), 流式聊天响应持续时间可能较长
+constexpr int kAiHttpReadTimeoutSeconds = 300;
+
+// [A06] AI 子服务 HTTP 客户端写超时时间(秒)
+constexpr int kAiHttpWriteTimeoutSeconds = 300;
+
+// [A06] AI 子服务 HTTP 客户端连接超时时间(秒)
+constexpr int kAiHttpConnectTimeoutSeconds = 60;
+
+// SSE 流式响应结束标记
+constexpr char kSseDoneFrame[] = "data: [DONE]\n\n";
 
 // HTTP 成功状态码
 constexpr int kHttpStatusOk = 200;
@@ -149,6 +165,59 @@ void SendEnvelopeResponse(httplib::Response& response, const std::string& reques
     // HTTP 状态码统一为 200, 业务处理结果通过 errorCode 表达
     response.status = kHttpStatusOk;
     response.set_content(response_body, "application/json");
+}
+
+/**
+ * @brief 向 SSE 数据接收器发送一条 SSE 数据帧, 帧体为通用响应信封格式(不含 requestId),
+ *        序列化时自动完成消息片段内容的 JSON 转义
+ * @param data_sink SSE 数据接收器
+ * @param content 消息片段内容
+ * @param done 是否结束
+ * @param error_code 错误码, 0 表示成功
+ * @param error_msg 错误信息, 成功时为空字符串
+ */
+void SendSseFrame(httplib::DataSink& data_sink, const std::string& content,
+                  bool done, int error_code, const std::string& error_msg)
+{
+    // 构建帧体 JSON
+    Json::Value frame_json;
+    frame_json["content"] = content;
+    frame_json["done"] = done;
+    frame_json["errorCode"] = error_code;
+    frame_json["errorMsg"] = error_msg;
+    std::string frame_body;
+    if (!cpp_toolkit::JsonUtil::SerializeCompact(frame_json, frame_body))
+    {
+        ERR("SSE 数据帧序列化失败, errorCode: {}", error_code);
+        return;
+    }
+
+    // SSE 帧格式 : data: {帧体}\n\n
+    const std::string frame = "data: " + frame_body + "\n\n";
+    data_sink.write(frame.data(), frame.size());
+}
+
+/**
+ * @brief 从 brpc 信道对象中解析子服务地址(host:port), 用于构建 HTTP 客户端
+ * @param channel brpc 信道对象
+ * @return 地址字符串, 解析失败返回空字符串
+ */
+std::string ParseChannelAddress(const cpp_toolkit::ChannelPtr& channel)
+{
+    // 信道描述格式为 "Channel[host:port]", 提取方括号内的地址
+    brpc::DescribeOptions describe_options;
+    std::ostringstream describe_stream;
+    channel->Describe(describe_stream, describe_options);
+    const std::string description = describe_stream.str();
+
+    const size_t begin_pos = description.find('[');
+    const size_t end_pos = description.find(']');
+    if (begin_pos == std::string::npos || end_pos == std::string::npos || end_pos <= begin_pos + 1)
+    {
+        ERR("解析子服务信道地址失败, 信道描述: {}", description);
+        return "";
+    }
+    return description.substr(begin_pos + 1, end_pos - begin_pos - 1);
 }
 
 /**
@@ -2569,10 +2638,219 @@ void GatewayServiceImpl::HandleAiDelete(const httplib::Request& request, httplib
          request_id, user_id, chat_session_id, error_code);
 }
 
-void GatewayServiceImpl::HandleAiSendStreamMessage(const httplib::Request& request, httplib::Response&)
+void GatewayServiceImpl::HandleAiSendStreamMessage(const httplib::Request& request, httplib::Response& response)
 {
-    // 接口暂未实现, 仅记录调用日志, 后续版本补充业务逻辑
-    INFO("[A06] 发送消息(流式, SSE)接口暂未实现, 请求路径: {}", request.path);
+    // 1. 解析 HTTP 请求体, 提取请求 ID
+    Json::Value request_json;
+    std::string request_id;
+    if (!ParseJsonBody(request, request_json, request_id))
+    {
+        SendEnvelopeResponse(response, "", kGatewayErrorCodeParams, "请求体 JSON 解析失败或缺少 requestId 字段");
+        return;
+    }
+
+    // 2. 提取请求参数
+    std::string session_id = request_json["sessionId"].asString();
+    std::string chat_session_id = request_json["chatSessionId"].asString();
+    std::string chat_type = request_json["chatType"].asString();
+    std::string message = request_json["message"].asString();
+    std::string file_id = request_json["fileId"].asString();
+    std::string db_type = request_json["dbType"].asString();
+    std::string db_connect_id = request_json["dbConnectId"].asString();
+    std::string table_name = request_json["tableName"].asString();
+
+    // 3. 参数校验, 逐项校验参数并返回对应的错误描述
+    if (session_id.empty())
+    {
+        ERR("[A06] 请求参数错误, sessionId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : sessionId 不能为空");
+        return;
+    }
+    else if (chat_session_id.empty())
+    {
+        ERR("[A06] 请求参数错误, chatSessionId 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : chatSessionId 不能为空");
+        return;
+    }
+    else if (chat_type != "plain" && chat_type != "excel" && chat_type != "database")
+    {
+        ERR("[A06] 请求参数错误, chatType 无效: {}, requestId: {}", chat_type, request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : chatType 必须为 plain/excel/database");
+        return;
+    }
+    else if (message.empty())
+    {
+        ERR("[A06] 请求参数错误, message 为空, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : message 不能为空");
+        return;
+    }
+    else if (chat_type == "database" && db_connect_id.empty())
+    {
+        ERR("[A06] 请求参数错误, database 场景缺少 dbConnectId, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : database 场景 dbConnectId 不能为空");
+        return;
+    }
+    else if (chat_type == "database" && table_name.empty())
+    {
+        ERR("[A06] 请求参数错误, database 场景缺少 tableName, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams, "请求参数错误 : database 场景 tableName 不能为空");
+        return;
+    }
+
+    // 4. 会话鉴权, 鉴权失败时透传错误码与错误信息
+    std::string user_id;
+    int error_code = 0;
+    std::string error_msg;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
+    {
+        SendEnvelopeResponse(response, request_id, error_code, error_msg);
+        return;
+    }
+
+    // 5. 获取 AI 子服务信道并解析服务地址(host:port), 用于构建 HTTP 客户端
+    cpp_toolkit::ChannelPtr ai_channel = GetServiceChannel(kAiServiceName);
+    std::string ai_service_addr = (ai_channel == nullptr) ? "" : ParseChannelAddress(ai_channel);
+    if (ai_service_addr.empty())
+    {
+        SendEnvelopeResponse(response, request_id, kGatewayErrorCodeUnavailable, "AI 子服务不可用");
+        return;
+    }
+    INFO("[A06] 获取 AI 子服务地址成功, requestId: {}, aiServiceAddr: {}", request_id, ai_service_addr);
+
+    // 6. dbType 区分大小写映射为 AI 子服务的数据库类型枚举名, 非法或缺省按 Excel 场景处理
+    std::string db_type_name;
+    if (db_type == "MYSQL")
+    {
+        db_type_name = "MYSQL";
+    }
+    else if (db_type == "SQLITE")
+    {
+        db_type_name = "SQLITE";
+    }
+    else
+    {
+        db_type_name = "EXCEL";
+    }
+
+    // 7. 构建转发给 AI 子服务的请求体, 字段名与 AI 子服务 proto 定义保持一致
+    Json::Value ai_request_json;
+    ai_request_json["request_id"] = request_id;
+    ai_request_json["session_id"] = session_id;
+    ai_request_json["user_id"] = user_id;
+    ai_request_json["chat_session_id"] = chat_session_id;
+    ai_request_json["chat_type"] = chat_type;
+    ai_request_json["message"] = message;
+    ai_request_json["file_id"] = file_id;
+    ai_request_json["db_type"] = db_type_name;
+    ai_request_json["db_connect_id"] = db_connect_id;
+    ai_request_json["table_name"] = table_name;
+    std::string request_body;
+    if (!cpp_toolkit::JsonUtil::SerializeCompact(ai_request_json, request_body))
+    {
+        ERR("[A06] 转发请求体序列化失败, requestId: {}", request_id);
+        SendEnvelopeResponse(response, request_id, kHttpStatusInternalError, "服务器内部错误");
+        return;
+    }
+
+    // 8. 设置 SSE 响应头, 响应头开启流式传输
+    response.status = kHttpStatusOk;
+    response.set_header("Cache-Control", "no-cache");
+    response.set_header("Connection", "keep-alive");
+    response.set_header("Access-Control-Allow-Origin", "*");
+    response.set_header("Access-Control-Allow-Headers", "*");
+
+    // 9. 设置流式传输回调, 回调中构建 HTTP 客户端向 AI 子服务发起发送消息请求,
+    //    AI 子服务推送纯文本块, 网关负责包装为 SSE 数据帧推送给前端
+    response.set_chunked_content_provider("text/event-stream",
+        [ai_service_addr, request_id, request_body](size_t /*offset*/, httplib::DataSink& data_sink) -> bool
+        {
+            // 9.1 解析 AI 子服务地址 "host:port"
+            const size_t colon_pos = ai_service_addr.find(':');
+            if (colon_pos == std::string::npos)
+            {
+                ERR("[A06] AI 子服务地址格式非法, aiServiceAddr: {}", ai_service_addr);
+                SendSseFrame(data_sink, "", true, kGatewayErrorCodeUnavailable, "AI 子服务不可用");
+                data_sink.write(kSseDoneFrame, sizeof(kSseDoneFrame) - 1);
+                data_sink.done();
+                return false;
+            }
+            const std::string host = ai_service_addr.substr(0, colon_pos);
+            const int port = std::stoi(ai_service_addr.substr(colon_pos + 1));
+
+            // 9.2 创建 HTTP 客户端并设置超时时间, 禁用压缩传输并开启 TCP_NODELAY 降低传输延迟
+            httplib::Client ai_client(host, port);
+            ai_client.set_read_timeout(kAiHttpReadTimeoutSeconds, 0);
+            ai_client.set_write_timeout(kAiHttpWriteTimeoutSeconds, 0);
+            ai_client.set_connection_timeout(kAiHttpConnectTimeoutSeconds, 0);
+            ai_client.set_tcp_nodelay(true);
+            ai_client.set_decompress(false);
+
+            // 9.3 构建 HTTP 请求, brpc 以"服务全名/方法名"匹配 HTTP 请求路径
+            httplib::Request ai_request;
+            ai_request.method = "POST";
+            ai_request.path = kAiSendMessageHttpPath;
+            ai_request.set_header("Content-Type", "application/json");
+            ai_request.set_header("Accept", "text/event-stream");
+            ai_request.body = request_body;
+
+            // 9.4 设置响应头处理器回调 : 检测是否成功建立流式连接,
+            //     AI 子服务流式响应的 Content-Type 为 text/event-stream,
+            //     非 200 状态码或非流式响应(如业务错误 JSON 响应)均按连接失败处理
+            bool connection_failed = false;
+            ai_request.response_handler = [&connection_failed](const httplib::Response& ai_response) -> bool
+            {
+                if (ai_response.status != kHttpStatusOk ||
+                    ai_response.get_header_value("Content-Type").find("text/event-stream") == std::string::npos)
+                {
+                    connection_failed = true;
+                    return false;
+                }
+                return true;
+            };
+
+            // 9.5 设置内容接收器回调 : 将 AI 子服务返回的纯文本块包装为 SSE 数据帧,
+            //     主动推送给前端
+            ai_request.content_receiver = [&connection_failed, &data_sink](const char* data,
+                                                                           size_t data_length,
+                                                                           size_t /*offset*/,
+                                                                           size_t /*total_length*/) -> bool
+            {
+                if (connection_failed)
+                {
+                    return false;
+                }
+                SendSseFrame(data_sink, std::string(data, data_length), false,
+                             static_cast<int>(ErrorCode::SUCCESS), "");
+                return true;
+            };
+
+            // 9.6 发送 HTTP 请求
+            httplib::Result ai_result = ai_client.send(ai_request);
+            if (!ai_result)
+            {
+                ERR("[A06] AI 子服务 HTTP 请求失败, requestId: {}, 错误信息: {}",
+                    request_id, httplib::to_string(ai_result.error()));
+                connection_failed = true;
+            }
+
+            // 9.7 发送结束帧 : 连接失败时发送错误帧, 成功时发送完成帧(错误码为 0);
+            //     AI 子服务业务处理异常以文本块形式透传, 最终结束帧统一为成功状态
+            if (connection_failed)
+            {
+                SendSseFrame(data_sink, "", true, kGatewayErrorCodeUnavailable, "AI 子服务不可用");
+            }
+            else
+            {
+                SendSseFrame(data_sink, "", true, static_cast<int>(ErrorCode::SUCCESS), "");
+            }
+
+            // 9.8 发送 SSE 流结束标记
+            data_sink.write(kSseDoneFrame, sizeof(kSseDoneFrame) - 1);
+            data_sink.done();
+            return false;
+        });
+
+    INFO("[A06] 发送消息接口处理完成, requestId: {}, userId: {}", request_id, user_id);
 }
 
 } // namespace chat_excel
