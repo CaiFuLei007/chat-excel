@@ -10,6 +10,11 @@
 #include <cpp-toolkit/etcd.h>
 #include <cpp-toolkit/logger.h>
 #include <cpp-toolkit/rpc.h>
+// fdfs.h 依赖的 fastcommon/common_define.h 定义了 byte 宏(signed char),
+// 会污染标准库与第三方库头文件, 因此必须放在所有头文件之后导入,
+// 导入后立即取消定义, 避免污染本文件后续代码
+#include <cpp-toolkit/fdfs.h>
+#undef byte
 #include "svc_database_service/connection_manager.h"
 #include "svc_database_service/database_business.h"
 #include "svc_database_service/database_service_impl.h"
@@ -112,6 +117,13 @@ DatabaseServerBuilder& DatabaseServerBuilder::SetMysqlSettings(
     return *this;
 }
 
+DatabaseServerBuilder& DatabaseServerBuilder::SetFdfsSettings(
+    const FdfsSettings& fdfs_settings)
+{
+    fdfs_settings_ = fdfs_settings;
+    return *this;
+}
+
 DatabaseServerBuilder& DatabaseServerBuilder::SetCareServiceNames(
     const std::vector<std::string>& care_service_names)
 {
@@ -121,12 +133,25 @@ DatabaseServerBuilder& DatabaseServerBuilder::SetCareServiceNames(
 
 std::shared_ptr<DatabaseServer> DatabaseServerBuilder::Build()
 {
-    // 1. 创建服务信道管理对象, 设置需要监控的子服务
+    // 1. 初始化 FastDFS 客户端(SQLite 连接业务层下载文件依赖),
+    //    未初始化时 tracker 连接获取会因空指针导致进程崩溃
+    cpp_toolkit::FdfsSettings fdfs_settings;
+    fdfs_settings.tracker_servers_ = fdfs_settings_.tracker_servers;
+    if (!cpp_toolkit::FdfsClient::Init(fdfs_settings))
+    {
+        ERR("FastDFS 客户端初始化失败, tracker 服务器个数: {}",
+            fdfs_settings_.tracker_servers.size());
+        return nullptr;
+    }
+    INFO("FastDFS 客户端初始化完成, tracker 服务器个数: {}",
+         fdfs_settings_.tracker_servers.size());
+
+    // 2. 创建服务信道管理对象, 设置需要监控的子服务
     channel_manager_ = std::make_shared<cpp_toolkit::ChannelManager>();
     channel_manager_->SetCareService(care_service_names_);
     INFO("服务信道管理对象构建完成, 监控服务数量: {}", care_service_names_.size());
 
-    // 2. 创建数据库连接管理器单例(内部创建 excel_connection 全局连接并启动过期连接清理),
+    // 3. 创建数据库连接管理器单例(内部创建 excel_connection 全局连接并启动过期连接清理),
     //    单例生命周期由静态局部变量管理, 使用空删除器包装为共享指针供业务逻辑层持有;
     //    全局连接创建失败(配置无效或 MySQL 不可达)时构建失败;
     //    cpp_toolkit::MySQLSettings 仅含连接参数, 此处转换为驱动层 MySQLConfig(不使用 SSL)
@@ -147,17 +172,17 @@ std::shared_ptr<DatabaseServer> DatabaseServerBuilder::Build()
     }
     INFO("数据库连接管理器构建完成");
 
-    // 3. 创建数据库业务逻辑对象(注入连接管理器与信道管理, 内部通过信道管理调用文件子服务下载 SQLite 文件)
+    // 4. 创建数据库业务逻辑对象(注入连接管理器与信道管理, 内部通过信道管理调用文件子服务下载 SQLite 文件)
     std::shared_ptr<DatabaseBusiness> database_business =
         std::make_shared<DatabaseBusiness>(connection_manager, channel_manager_);
     INFO("数据库业务逻辑对象构建完成");
 
-    // 4. 创建 RPC 接口实现对象
+    // 5. 创建 RPC 接口实现对象
     //    ServerFactory 使用 SERVER_DOESNT_OWN_SERVICE, 业务对象必须比 server 活得久
     database_service_impl_ = std::make_shared<DatabaseServiceImpl>(database_business);
     INFO("RPC 接口实现对象构建完成");
 
-    // 5. 创建并启动 brpc 服务器(ServerFactory 内部 AddService + Start, 立即启动)
+    // 6. 创建并启动 brpc 服务器(ServerFactory 内部 AddService + Start, 立即启动)
     server_ = cpp_toolkit::ServerFactory::CreateServer(rpc_settings_.listen_port,
                                                        database_service_impl_.get());
     if (server_ == nullptr)
@@ -167,7 +192,7 @@ std::shared_ptr<DatabaseServer> DatabaseServerBuilder::Build()
     }
     INFO("brpc 服务器已启动, 监听端口: {}", rpc_settings_.listen_port);
 
-    // 6. 创建服务发现(监控)对象, 定义上线/下线回调
+    // 7. 创建服务发现(监控)对象, 定义上线/下线回调
     //    回调以 shared_ptr 值捕获信道管理对象, 保证监控线程生命周期内信道管理对象有效
     cpp_toolkit::ChannelManager::Ptr channel_manager = channel_manager_;
     auto online_callback = [channel_manager](const std::string& service_name,
@@ -188,7 +213,7 @@ std::shared_ptr<DatabaseServer> DatabaseServerBuilder::Build()
         etcd_settings_.etcd_center_addr, std::move(online_callback), std::move(offline_callback));
     INFO("服务发现对象构建完成, ETCD 地址: {}", etcd_settings_.etcd_center_addr);
 
-    // 7. 独立线程启动服务监控(Watch 阻塞直至服务停止, detach; 值捕获 svc_watcher 保活)
+    // 8. 独立线程启动服务监控(Watch 阻塞直至服务停止, detach; 值捕获 svc_watcher 保活)
     cpp_toolkit::SvcWatcher::Ptr svc_watcher = svc_watcher_;
     std::thread watch_thread([svc_watcher]()
     {
@@ -203,7 +228,7 @@ std::shared_ptr<DatabaseServer> DatabaseServerBuilder::Build()
     watch_thread.detach();
     INFO("服务监控线程已启动");
 
-    // 8. 服务注册(SvcProvider + Registry, KeepAlive 自动续期; 须在 server 启动后注册)
+    // 9. 服务注册(SvcProvider + Registry, KeepAlive 自动续期; 须在 server 启动后注册)
     svc_provider_ = std::make_shared<cpp_toolkit::SvcProvider>(
         etcd_settings_.etcd_center_addr, etcd_settings_.service_name, etcd_settings_.service_addr);
     if (!svc_provider_->Registry(etcd_settings_.registry_ttl))

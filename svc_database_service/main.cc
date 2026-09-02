@@ -43,6 +43,9 @@ DEFINE_string(service_addr, "127.0.0.1:8084", "数据库子服务注册地址");
 // 需要监控的子服务名称列表(逗号分隔)
 DEFINE_string(care_service_names, "FileService", "需要监控的子服务名称列表(逗号分隔)");
 
+// FastDFS Tracker 服务器地址列表(逗号分隔), SQLite 文件下载依赖
+DEFINE_string(fdfs_tracker_servers, "127.0.0.1:22122", "FastDFS Tracker 服务器地址列表(逗号分隔)");
+
 // 服务注册 TTL(秒)
 DEFINE_int32(registry_ttl, 10, "服务注册 TTL(秒)");
 
@@ -158,12 +161,18 @@ int main(int argc, char* argv[])
     std::vector<std::string> care_service_names = SplitCommaSeparated(FLAGS_care_service_names);
     INFO("服务发现配置完成, 监控服务数量: {}", care_service_names.size());
 
-    // 7. 链式构建数据库子服务服务器
+    // 7. 组装 FastDFS 客户端配置(SQLite 连接业务层下载文件依赖)
+    chat_excel::database_service::FdfsSettings fdfs_settings;
+    fdfs_settings.tracker_servers = SplitCommaSeparated(FLAGS_fdfs_tracker_servers);
+    INFO("FastDFS 配置组装完成, Tracker 服务器数量: {}", fdfs_settings.tracker_servers.size());
+
+    // 8. 链式构建数据库子服务服务器
     std::shared_ptr<chat_excel::database_service::DatabaseServer> database_server =
         chat_excel::database_service::DatabaseServerBuilder()
             .SetRpcSettings(rpc_settings)
             .SetEtcdSettings(etcd_settings)
             .SetMysqlSettings(mysql_settings)
+            .SetFdfsSettings(fdfs_settings)
             .SetCareServiceNames(care_service_names)
             .Build();
     if (database_server == nullptr)

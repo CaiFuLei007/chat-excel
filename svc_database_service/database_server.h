@@ -38,6 +38,13 @@ struct EtcdSettings
     int registry_ttl = 10;
 };
 
+// FastDFS 客户端配置信息 : Tracker 服务器列表(SQLite 文件下载依赖)
+struct FdfsSettings
+{
+    // Tracker 服务器地址列表, eg : {"127.0.0.1:22122"}
+    std::vector<std::string> tracker_servers;
+};
+
 /**
  * @brief 数据库子服务 RPC 服务器类, 负责 brpc 服务器的启动与停止管理
  *        服务器对象由 DatabaseServerBuilder 通过 ServerFactory 创建并启动(Start 已调用),
@@ -147,6 +154,13 @@ public:
     DatabaseServerBuilder& SetMysqlSettings(std::shared_ptr<cpp_toolkit::MySQLSettings> mysql_settings);
 
     /**
+     * @brief 设置 FastDFS 客户端配置(Tracker 服务器列表, SQLite 文件下载依赖)
+     * @param fdfs_settings FastDFS 客户端配置信息
+     * @return 构建器自身引用, 支持链式调用
+     */
+    DatabaseServerBuilder& SetFdfsSettings(const FdfsSettings& fdfs_settings);
+
+    /**
      * @brief 设置需要监控(服务发现)的子服务名称列表
      * @param care_service_names 子服务名称列表
      * @return 构建器自身引用, 支持链式调用
@@ -169,6 +183,9 @@ private:
 
     // MySQL 数据库配置(excel_connection 全局连接使用)
     std::shared_ptr<cpp_toolkit::MySQLSettings> mysql_settings_;
+
+    // FastDFS 客户端配置(Tracker 服务器列表, SQLite 文件下载依赖)
+    FdfsSettings fdfs_settings_;
 
     // 需要监控的子服务名称列表
     std::vector<std::string> care_service_names_;
