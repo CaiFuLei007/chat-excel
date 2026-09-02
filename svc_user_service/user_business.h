@@ -49,12 +49,16 @@ public:
 
     /**
      * @brief 用户注册, 调用该接口之前昵称和邮箱唯一性已经检测通过;
+     *        先校验验证码 ID、验证码与用户邮箱是否匹配, 校验通过才能进行注册;
      *        用户 ID 使用 uuid 生成器生成, 密码使用 bcrypt 单向哈希算法加密后保存到数据库
      * @param nickname 用户昵称
      * @param password 用户明文密码
      * @param email 用户邮箱
+     * @param verifycode_id 验证码 ID
+     * @param verify_code 验证码
      */
-    void UserRegister(const std::string& nickname, const std::string& password, const std::string& email);
+    void UserRegister(const std::string& nickname, const std::string& password, const std::string& email,
+                      const std::string& verifycode_id, const std::string& verify_code);
 
     /**
      * @brief 密码登录, 用户名可以是用户昵称或用户邮箱, 优先通过昵称获取用户信息;

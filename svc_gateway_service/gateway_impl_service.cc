@@ -837,7 +837,7 @@ void GatewayServiceImpl::HandleUserEmailValid(const httplib::Request& request, h
 
 void GatewayServiceImpl::HandleUserRegister(const httplib::Request& request, httplib::Response& response)
 {
-    // 1. 解析 HTTP 请求体, 提取请求 ID、昵称、密码与邮箱
+    // 1. 解析 HTTP 请求体, 提取请求 ID、昵称、密码、邮箱与验证码信息
     Json::Value request_json;
     std::string request_id;
     if (!ParseJsonBody(request, request_json, request_id))
@@ -848,11 +848,13 @@ void GatewayServiceImpl::HandleUserRegister(const httplib::Request& request, htt
     std::string nickname = request_json["nickname"].asString();
     std::string password = request_json["password"].asString();
     std::string email = request_json["email"].asString();
-    if (nickname.empty() || password.empty() || email.empty())
+    std::string verify_code = request_json["verifyCode"].asString();
+    std::string code_id = request_json["codeId"].asString();
+    if (nickname.empty() || password.empty() || email.empty() || verify_code.empty() || code_id.empty())
     {
-        ERR("[U03] 请求参数错误, nickname/password/email 存在空值, requestId: {}", request_id);
+        ERR("[U03] 请求参数错误, nickname/password/email/verifyCode/codeId 存在空值, requestId: {}", request_id);
         SendEnvelopeResponse(response, request_id, kGatewayErrorCodeParams,
-                             "请求参数错误 : nickname、password 与 email 均不能为空");
+                             "请求参数错误 : nickname、password、email、verifyCode 与 codeId 均不能为空");
         return;
     }
 
@@ -871,6 +873,8 @@ void GatewayServiceImpl::HandleUserRegister(const httplib::Request& request, htt
     rpc_request.set_nickname(nickname);
     rpc_request.set_password(password);
     rpc_request.set_email(email);
+    rpc_request.set_verify_code(verify_code);
+    rpc_request.set_code_id(code_id);
 
     // 4. 调用用户子服务的 RPC 接口, 失败时透传错误码与错误信息
     proto::UserRegisterResponse rpc_response;

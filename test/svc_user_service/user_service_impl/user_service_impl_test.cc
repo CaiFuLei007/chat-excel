@@ -208,6 +208,30 @@ protected:
         test_password_ = "pwd_rpc_test";
     }
 
+    /**
+     * @brief 为注册请求填充验证码字段, 模拟用户注册前先获取验证码的流程 :
+     *        先调用 GetCode 接口生成验证码, 再从数据访问层读取验证码内容(测试替身模拟用户从邮箱获取验证码)
+     * @param request 注册请求, 需已填充 requestId 与 email
+     */
+    void FillRegisterVerifyCode(UserRegisterRequest* request)
+    {
+        GetCodeRequest get_code_request;
+        get_code_request.set_request_id(request->request_id() + "_get_code");
+        get_code_request.set_email(request->email());
+        GetCodeResponse get_code_response;
+        user_service_impl_->GetCode(nullptr, &get_code_request, &get_code_response, nullptr);
+        ASSERT_EQ(get_code_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
+
+        // 从数据访问层读取生成的验证码(测试替身模拟用户从邮箱获取验证码)
+        VerifyCodeData verifycode_data(GetRedisHandle());
+        const auto verifycode_info =
+            verifycode_data.GetVerifyCodeByVerifyCodeId(get_code_response.result().code_id());
+        ASSERT_TRUE(verifycode_info.has_value());
+
+        request->set_code_id(get_code_response.result().code_id());
+        request->set_verify_code(verifycode_info->verify_code);
+    }
+
     // RPC 接口实现对象
     std::unique_ptr<UserServiceImpl> user_service_impl_;
 
@@ -277,6 +301,47 @@ TEST_F(UserServiceImplTest, UserRegisterWithEmptyParamsReturnParamsError)
     UserRegisterResponse email_empty_response;
     user_service_impl_->UserRegister(nullptr, &email_empty_request, &email_empty_response, nullptr);
     EXPECT_EQ(email_empty_response.error_code(), static_cast<int>(ErrorCode::USER_SERVICE_PARAMS_ERROR));
+
+    // 验证码为空
+    UserRegisterRequest verify_code_empty_request;
+    verify_code_empty_request.set_request_id("rid_register_param_4");
+    verify_code_empty_request.set_nickname(test_nickname_);
+    verify_code_empty_request.set_password(test_password_);
+    verify_code_empty_request.set_email(test_email_);
+    verify_code_empty_request.set_code_id("code_id_register_param_4");
+    UserRegisterResponse verify_code_empty_response;
+    user_service_impl_->UserRegister(nullptr, &verify_code_empty_request, &verify_code_empty_response, nullptr);
+    EXPECT_EQ(verify_code_empty_response.error_code(), static_cast<int>(ErrorCode::USER_SERVICE_PARAMS_ERROR));
+
+    // 验证码 ID 为空
+    UserRegisterRequest code_id_empty_request;
+    code_id_empty_request.set_request_id("rid_register_param_5");
+    code_id_empty_request.set_nickname(test_nickname_);
+    code_id_empty_request.set_password(test_password_);
+    code_id_empty_request.set_email(test_email_);
+    code_id_empty_request.set_verify_code("123456");
+    UserRegisterResponse code_id_empty_response;
+    user_service_impl_->UserRegister(nullptr, &code_id_empty_request, &code_id_empty_response, nullptr);
+    EXPECT_EQ(code_id_empty_response.error_code(), static_cast<int>(ErrorCode::USER_SERVICE_PARAMS_ERROR));
+}
+
+TEST_F(UserServiceImplTest, UserRegisterWithWrongVerifyCodeReturnVerifycodeError)
+{
+    // 获取验证码
+    UserRegisterRequest request;
+    request.set_request_id("rid_register_wrong_code");
+    request.set_nickname(test_nickname_);
+    request.set_password(test_password_);
+    request.set_email(test_email_);
+    FillRegisterVerifyCode(&request);
+
+    // 使用错误验证码注册失败
+    request.set_verify_code("654321");
+    UserRegisterResponse response;
+    user_service_impl_->UserRegister(nullptr, &request, &response, nullptr);
+
+    EXPECT_EQ(response.error_code(), static_cast<int>(ErrorCode::VERIFYCODE_ERROR));
+    EXPECT_FALSE(response.error_msg().empty());
 }
 
 TEST_F(UserServiceImplTest, SessionLoginWithEmptySessionIdReturnParamsError)
@@ -413,6 +478,8 @@ TEST_F(UserServiceImplTest, ValidNicknameUniqueThenExistsAfterRegister)
     register_request.set_password(test_password_);
     register_request.set_email(test_email_);
     UserRegisterResponse register_response;
+    // 注册前先获取验证码, 模拟用户从邮箱获取验证码后携带验证码注册的流程
+    FillRegisterVerifyCode(&register_request);
     user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
     EXPECT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
 
@@ -444,6 +511,8 @@ TEST_F(UserServiceImplTest, ValidEmailUniqueThenExistsAfterRegister)
     register_request.set_password(test_password_);
     register_request.set_email(test_email_);
     UserRegisterResponse register_response;
+    // 注册前先获取验证码, 模拟用户从邮箱获取验证码后携带验证码注册的流程
+    FillRegisterVerifyCode(&register_request);
     user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
     EXPECT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
 
@@ -467,7 +536,8 @@ TEST_F(UserServiceImplTest, UserRegisterSuccessWithoutErrorMsg)
     request.set_password(test_password_);
     request.set_email(test_email_);
     UserRegisterResponse response;
-
+    // 注册前先获取验证码, 模拟用户从邮箱获取验证码后携带验证码注册的流程
+    FillRegisterVerifyCode(&request);
     user_service_impl_->UserRegister(nullptr, &request, &response, nullptr);
 
     // 成功仅设置成功错误码, 不添加成功的描述信息
@@ -483,6 +553,8 @@ TEST_F(UserServiceImplTest, UserRegisterDuplicateNicknameReturnMysqlError)
     request.set_nickname(test_nickname_);
     request.set_password(test_password_);
     request.set_email(test_email_);
+    // 注册前先获取验证码, 模拟用户从邮箱获取验证码后携带验证码注册的流程
+    FillRegisterVerifyCode(&request);
 
     // 第一次注册成功
     UserRegisterResponse first_response;
@@ -507,6 +579,8 @@ TEST_F(UserServiceImplTest, PasswdLoginSuccessReturnSessionId)
     register_request.set_password(test_password_);
     register_request.set_email(test_email_);
     UserRegisterResponse register_response;
+    // 注册前先获取验证码, 模拟用户从邮箱获取验证码后携带验证码注册的流程
+    FillRegisterVerifyCode(&register_request);
     user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
     ASSERT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
 
@@ -533,6 +607,8 @@ TEST_F(UserServiceImplTest, PasswdLoginWithWrongPasswordReturnPasswordError)
     register_request.set_password(test_password_);
     register_request.set_email(test_email_);
     UserRegisterResponse register_response;
+    // 注册前先获取验证码, 模拟用户从邮箱获取验证码后携带验证码注册的流程
+    FillRegisterVerifyCode(&register_request);
     user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
     ASSERT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
 
@@ -590,6 +666,8 @@ TEST_F(UserServiceImplTest, VcodeLoginSuccessReturnSessionId)
     register_request.set_password(test_password_);
     register_request.set_email(test_email_);
     UserRegisterResponse register_response;
+    // 注册前先获取验证码, 模拟用户从邮箱获取验证码后携带验证码注册的流程
+    FillRegisterVerifyCode(&register_request);
     user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
     ASSERT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
 
@@ -631,6 +709,8 @@ TEST_F(UserServiceImplTest, VcodeLoginWithWrongCodeReturnVerifycodeError)
     register_request.set_password(test_password_);
     register_request.set_email(test_email_);
     UserRegisterResponse register_response;
+    // 注册前先获取验证码, 模拟用户从邮箱获取验证码后携带验证码注册的流程
+    FillRegisterVerifyCode(&register_request);
     user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
     ASSERT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
 
@@ -708,6 +788,8 @@ TEST_F(UserServiceImplTest, DeleteVerifyCodeSuccessThenVcodeLoginFail)
     register_request.set_password(test_password_);
     register_request.set_email(test_email_);
     UserRegisterResponse register_response;
+    // 注册前先获取验证码, 模拟用户从邮箱获取验证码后携带验证码注册的流程
+    FillRegisterVerifyCode(&register_request);
     user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
     ASSERT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
 
@@ -774,6 +856,8 @@ TEST_F(UserServiceImplTest, SessionLoginSuccessAfterPasswdLogin)
     register_request.set_password(test_password_);
     register_request.set_email(test_email_);
     UserRegisterResponse register_response;
+    // 注册前先获取验证码, 模拟用户从邮箱获取验证码后携带验证码注册的流程
+    FillRegisterVerifyCode(&register_request);
     user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
     ASSERT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
 
@@ -821,6 +905,8 @@ TEST_F(UserServiceImplTest, GetUserInfoSuccessReturnUserInfo)
     register_request.set_password(test_password_);
     register_request.set_email(test_email_);
     UserRegisterResponse register_response;
+    // 注册前先获取验证码, 模拟用户从邮箱获取验证码后携带验证码注册的流程
+    FillRegisterVerifyCode(&register_request);
     user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
     ASSERT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
 
@@ -871,6 +957,8 @@ TEST_F(UserServiceImplTest, LogoutSuccessThenSessionInvalid)
     register_request.set_password(test_password_);
     register_request.set_email(test_email_);
     UserRegisterResponse register_response;
+    // 注册前先获取验证码, 模拟用户从邮箱获取验证码后携带验证码注册的流程
+    FillRegisterVerifyCode(&register_request);
     user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
     ASSERT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
 
@@ -926,6 +1014,8 @@ TEST_F(UserServiceImplTest, ValidSessionSuccessAfterPasswdLogin)
     register_request.set_password(test_password_);
     register_request.set_email(test_email_);
     UserRegisterResponse register_response;
+    // 注册前先获取验证码, 模拟用户从邮箱获取验证码后携带验证码注册的流程
+    FillRegisterVerifyCode(&register_request);
     user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
     ASSERT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
 
@@ -973,6 +1063,8 @@ TEST_F(UserServiceImplTest, ValidSessionFailAfterLogout)
     register_request.set_password(test_password_);
     register_request.set_email(test_email_);
     UserRegisterResponse register_response;
+    // 注册前先获取验证码, 模拟用户从邮箱获取验证码后携带验证码注册的流程
+    FillRegisterVerifyCode(&register_request);
     user_service_impl_->UserRegister(nullptr, &register_request, &register_response, nullptr);
     ASSERT_EQ(register_response.error_code(), static_cast<int>(ErrorCode::SUCCESS));
 

@@ -209,8 +209,25 @@ bool UserBusiness::CheckEmailUnique(const std::string& email)
 }
 
 void UserBusiness::UserRegister(const std::string& nickname, const std::string& password,
-                                const std::string& email)
+                                const std::string& email, const std::string& verifycode_id,
+                                const std::string& verify_code)
 {
+    // 通过验证码 ID 从缓存中获取验证码信息, 验证码 ID 即查找键, 查找命中即 ID 匹配
+    std::optional<VerifyCodeInfo> verifycode_info =
+        verifycode_data_->GetVerifyCodeByVerifyCodeId(verifycode_id);
+    if (!verifycode_info)
+    {
+        ERR("用户注册失败, 验证码不存在或已过期, verifycode_id: {}", verifycode_id);
+        throw ChatExcelException(ErrorCode::VERIFYCODE_ERROR);
+    }
+
+    // 检查验证码与用户邮箱是否都匹配, 校验通过才能进行注册
+    if (verifycode_info->verify_code != verify_code || verifycode_info->email != email)
+    {
+        ERR("用户注册失败, 验证码或用户邮箱不匹配, verifycode_id: {}", verifycode_id);
+        throw ChatExcelException(ErrorCode::VERIFYCODE_ERROR);
+    }
+
     // 构建用户信息, 用户 ID 使用 uuid 生成器生成, 密码使用 bcrypt 单向哈希算法加密
     UserInfo user_info;
     user_info.user_id = cpp_toolkit::UuidUtil::GenerateUuidV4();

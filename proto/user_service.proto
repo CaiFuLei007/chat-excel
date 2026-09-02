@@ -34,6 +34,8 @@ message UserRegisterRequest {
     string nickname = 2; // 昵称
     string password = 3; // 密码
     string email = 4; // 邮箱
+    string verify_code = 5; // 验证码
+    string code_id = 6; // 验证码id
 }
 
 message UserRegisterResponse {

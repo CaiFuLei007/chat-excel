@@ -30,7 +30,7 @@
 | -------------------------- | ------------------------------------------   |
 | sessionId                  | 登录会话，区分当前登录用户                       |
 | chatSessionId              | 聊天会话，区分与模型的不同对话                    |
-| codeId                     | 验证码ID，与 verifyCode 配对用于验证码登录       |
+| codeId                     | 验证码ID，与 verifyCode 配对用于验证码登录或注册  |
 | fileId                     | 上传文件ID                                     |
 | connectionId / dbConnectId | 数据库连接ID（默认连接 `excel_default` 专用于智能Excel场景） |
 
@@ -66,8 +66,9 @@ POST /api/user/valid/email
 
 [U03] 用户注册
 POST /api/user/register
-请求体：{ "requestId": str, "nickname": str, "password": str, "email": str }
+请求体：{ "requestId": str, "nickname": str, "password": str, "email": str, "verifyCode": str, "codeId": str }
 返回结果：无
+注意：verifyCode 与 codeId 通过 [U05] 获取验证码接口获得，验证码校验通过才能注册成功
 
 [U04] 密码登录
 POST /api/user/passwd/login
@@ -98,7 +99,6 @@ POST /api/user/logout
 POST /api/user/info?requestId={requestId}&sessionId={sessionId}&userId={userId}
 请求体：无（参数全部在 query 中）
 返回结果：{ "userInfo": { "userId": str, "nickname": str, "email": str } }
-注意：课件接口设计章节为 POST + query 参数；课件路由绑定代码为 server.Get("/api/user/info")，两者不一致，以实际实现为准。
 ```
 
 ### 分组 2：文件子服务（9 个）
@@ -221,7 +221,7 @@ POST /api/ai/models
 [A02] 新建聊天会话
 POST /api/ai/session/create
 请求体：{ "requestId": str, "sessionId": str, "modelName": str, "sessionType": str, "dbConnectionInfo": str }
-sessionType：会话类型，必填，仅支持 excel/database
+sessionType：会话类型，必填，仅支持 excel/database/plain
 dbConnectionInfo：数据库连接信息JSON，database 类型会话必填，excel 类型不填
 返回结果：{ "chatSessionId": str, "modelName": str }
 注意：会话标题不透传，首条聊天消息后会自动更新为会话标题
@@ -308,6 +308,6 @@ POST /api/ai/sendStreamMessage
 
 ## 典型调用链（接口依赖关系参考）
 
-1. **注册登录流程**：U01/U02 唯一性校验 → U03 注册 → U04 密码登录（或 U05 获取验证码 → U06 验证码登录）→ 获得 sessionId
+1. **注册登录流程**：U01/U02 唯一性校验 → U05 获取验证码 → U03 注册（携带 codeId + verifyCode）→ U04 密码登录（或 U06 验证码登录）→ 获得 sessionId
 2. **Excel 分析流程**：F01 登记元数据 → F03 上传二进制 → F08 绑定 chatSessionId → A02 新建聊天会话 → A06 流式对话（chatType=excel，携带 fileId）→ A04 查历史消息
 3. **数据库分析流程**：F09 上传 SQLite 文件 或 D01 连接 MySQL → D03/D04 浏览表结构和数据 → A06 流式对话（chatType=database，携带 dbConnectId）→ D05 查看修改状态

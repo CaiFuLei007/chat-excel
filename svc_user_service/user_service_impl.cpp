@@ -145,8 +145,9 @@ void UserServiceImpl::UserRegister(google::protobuf::RpcController* /*controller
 
     try
     {
-        // 参数解析与校验, 昵称、密码与邮箱均不能为空
-        if (request->nickname().empty() || request->password().empty() || request->email().empty())
+        // 参数解析与校验, 昵称、密码、邮箱、验证码与验证码 ID 均不能为空
+        if (request->nickname().empty() || request->password().empty() || request->email().empty() ||
+            request->verify_code().empty() || request->code_id().empty())
         {
             ERR("UserRegister 接口请求参数错误, nickname: {}, email: {}, request_id: {}",
                 request->nickname(), request->email(), request->request_id());
@@ -155,7 +156,8 @@ void UserServiceImpl::UserRegister(google::protobuf::RpcController* /*controller
         }
 
         // 调用业务逻辑层完成用户注册, 注册失败时业务逻辑层抛出异常
-        user_business_->UserRegister(request->nickname(), request->password(), request->email());
+        user_business_->UserRegister(request->nickname(), request->password(), request->email(),
+                                     request->code_id(), request->verify_code());
 
         // 成功仅设置成功错误码, 不添加成功的描述信息
         response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
