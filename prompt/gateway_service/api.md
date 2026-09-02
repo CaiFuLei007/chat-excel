@@ -96,9 +96,10 @@ POST /api/user/logout
 返回结果：无
 
 [U09] 获取用户信息
-POST /api/user/info?requestId={requestId}&sessionId={sessionId}&userId={userId}
+POST /api/user/info?requestId={requestId}&sessionId={sessionId}
 请求体：无（参数全部在 query 中）
 返回结果：{ "userInfo": { "userId": str, "nickname": str, "email": str } }
+注意：用户 ID 不再由请求传入，网关通过会话鉴权获取会话所属用户 ID
 ```
 
 ### 分组 2：文件子服务（9 个）

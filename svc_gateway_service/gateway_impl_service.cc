@@ -1171,10 +1171,9 @@ void GatewayServiceImpl::HandleUserLogout(const httplib::Request& request, httpl
 
 void GatewayServiceImpl::HandleUserInfo(const httplib::Request& request, httplib::Response& response)
 {
-    // 1. 解析 HTTP 请求 query 参数(本接口参数全部在 query 中, 请求体为空)
+    // 1. 解析 HTTP 请求 query 参数(本接口参数全部在 query 中, 请求体为空, 用户 ID 由会话鉴权获取)
     std::string request_id = request.get_param_value("requestId");
     std::string session_id = request.get_param_value("sessionId");
-    std::string user_id = request.get_param_value("userId");
     if (request_id.empty() || session_id.empty())
     {
         ERR("[U09] 请求参数错误, requestId 或 sessionId 为空, 请求路径: {}", request.path);
@@ -1183,11 +1182,11 @@ void GatewayServiceImpl::HandleUserInfo(const httplib::Request& request, httplib
         return;
     }
 
-    // 2. 鉴权, 检查会话是否有效, 失败时透传错误码与错误信息(鉴权用户 ID 与 query 中的 userId 互不影响)
+    // 2. 鉴权, 检查会话是否有效并获取会话所属用户 ID, 失败时透传错误码与错误信息
     int error_code = 0;
     std::string error_msg;
-    std::string auth_user_id;
-    if (!CheckSessionValid(request_id, session_id, auth_user_id, error_code, error_msg))
+    std::string user_id;
+    if (!CheckSessionValid(request_id, session_id, user_id, error_code, error_msg))
     {
         SendEnvelopeResponse(response, request_id, error_code, error_msg);
         return;
@@ -1202,7 +1201,7 @@ void GatewayServiceImpl::HandleUserInfo(const httplib::Request& request, httplib
         return;
     }
 
-    // 4. 构建 RPC 请求(user_id 透传给后端, 由后端决定是否使用)
+    // 4. 构建 RPC 请求(用户 ID 来自会话鉴权结果)
     proto::GetUserInfoRequest rpc_request;
     rpc_request.set_request_id(request_id);
     rpc_request.set_session_id(session_id);
