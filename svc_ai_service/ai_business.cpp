@@ -119,6 +119,31 @@ void AiBusiness::UpdateChatSessionFileId(const std::string& request_id, const st
          request_id, chat_session_id, file_id);
 }
 
+void AiBusiness::DeleteChatSessionsByFileId(const std::string& request_id, const std::string& user_id,
+                                            const std::string& file_id)
+{
+    // 获取关联了该文件的所有聊天会话元数据
+    const std::vector<ChatSessionInfo> chat_session_list =
+        chat_session_manager_->GetChatSessionListByFileId(file_id);
+
+    // 逐个删除关联会话, 每个会话删除成功后单独记录日志;
+    // ChatSDK 删除失败时抛出异常中断, 已删除会话不会重复删除
+    for (const ChatSessionInfo& chat_session_info : chat_session_list)
+    {
+        if (chat_session_info.user_id != user_id)
+        {
+            WARN("聊天会话不属于当前用户, 跳过删除, request_id: {}, chat_session_id: {}, "
+                 "file_id: {}, 会话用户: {}, 请求用户: {}",
+                 request_id, chat_session_info.chat_session_id, file_id,
+                 chat_session_info.user_id, user_id);
+            continue;
+        }
+        DeleteChatSession(request_id, user_id, chat_session_info.chat_session_id);
+    }
+    INFO("按文件删除关联聊天会话完成, request_id: {}, user_id: {}, file_id: {}, 会话数量: {}",
+         request_id, user_id, file_id, chat_session_list.size());
+}
+
 ChatSessionInfo AiBusiness::GetChatSessionWithOwnerCheck(const std::string& request_id,
                                                          const std::string& user_id,
                                                          const std::string& chat_session_id)

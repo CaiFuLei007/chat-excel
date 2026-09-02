@@ -397,6 +397,125 @@ void UpdateSessionFileFromRpc(const cpp_toolkit::ChannelManager::Ptr& channel_ma
          request_id, chat_session_id, file_id);
 }
 
+/**
+ * @brief 调用数据库子服务 RPC 接口删除数据库中 WorkSheet 对应的数据表,
+ *        数据库表不存在或删除失败时不做失败处理(表可重建, 不影响文件删除主流程)
+ * @param channel_manager RPC 信道管理对象
+ * @param request_id 请求 ID, 用于日志链路追踪
+ * @param connection_id 数据库连接 ID(Excel 场景使用 excel_connection 全局连接)
+ * @param table_names 待删除的数据库表名列表
+ */
+void DropTableExcelFromRpc(const cpp_toolkit::ChannelManager::Ptr& channel_manager,
+                           const std::string& request_id,
+                           const std::string& connection_id,
+                           const std::vector<std::string>& table_names)
+{
+    if (table_names.empty())
+    {
+        return;
+    }
+
+    // 通过信道管理对象获取数据库子服务通信信道
+    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(kDatabaseServiceName);
+    if (channel == nullptr)
+    {
+        ERR("获取数据库子服务信道失败, request_id: {}, 服务名称: {}",
+            request_id, kDatabaseServiceName);
+        return;
+    }
+
+    // 构建 RPC 请求并同步调用删除 WorkSheet 数据表接口
+    db_proto::DropTableExcelRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_db_connect_id(connection_id);
+    for (const std::string& table_name : table_names)
+    {
+        rpc_request.add_table_names(table_name);
+    }
+
+    db_proto::DatabaseService_Stub database_service_stub(channel.get());
+    brpc::Controller controller;
+    controller.set_timeout_ms(kDatabaseRpcTimeoutMs);
+    db_proto::DropTableExcelResponse rpc_response;
+    database_service_stub.DropTableExcel(&controller, &rpc_request, &rpc_response, nullptr);
+
+    // 检测 RPC 调用是否成功(网络/超时/信道层面的失败)
+    if (controller.Failed())
+    {
+        ERR("数据库子服务 RPC 调用失败, request_id: {}, 错误信息: {}", request_id, controller.ErrorText());
+        return;
+    }
+
+    // 检测数据库子服务业务处理结果
+    if (rpc_response.error_code() != static_cast<int>(ErrorCode::SUCCESS))
+    {
+        ERR("删除 WorkSheet 数据表失败, request_id: {}, 错误码: {}, 错误信息: {}",
+            request_id, rpc_response.error_code(), rpc_response.error_msg());
+        return;
+    }
+
+    // 部分表删除失败时记录日志(失败表可重建, 不影响文件删除主流程)
+    const db_proto::DropTableExcelResult& result = rpc_response.result();
+    if (!result.failed_tables().empty())
+    {
+        ERR("部分 WorkSheet 数据表删除失败, request_id: {}, 失败数量: {}, 失败表数量由调用方日志体现",
+            request_id, result.failed_tables_size());
+    }
+    INFO("删除 WorkSheet 数据表成功, request_id: {}, 删除表数量: {}",
+         request_id, result.dropped_count());
+}
+
+/**
+ * @brief 调用 AI 子服务 RPC 接口删除关联了指定文件的所有聊天会话,
+ *        删除失败时抛出异常由调用方决定是否继续后续删除流程
+ * @param channel_manager RPC 信道管理对象
+ * @param request_id 请求 ID, 用于日志链路追踪
+ * @param user_id 用户 ID
+ * @param file_id 文件 ID
+ */
+void DeleteChatSessionsByFileFromRpc(const cpp_toolkit::ChannelManager::Ptr& channel_manager,
+                                     const std::string& request_id, const std::string& user_id,
+                                     const std::string& file_id)
+{
+    // 通过信道管理对象获取 AI 子服务通信信道
+    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(kAiServiceName);
+    if (channel == nullptr)
+    {
+        ERR("获取 AI 子服务信道失败, request_id: {}, 服务名称: {}", request_id, kAiServiceName);
+        throw ChatExcelException(ErrorCode::FILE_AI_RPC_ERROR);
+    }
+
+    // 构建 RPC 请求并同步调用按文件删除聊天会话接口
+    ai_proto::DeleteSessionsByFileRequest rpc_request;
+    rpc_request.set_request_id(request_id);
+    rpc_request.set_user_id(user_id);
+    rpc_request.set_file_id(file_id);
+
+    ai_proto::AIService_Stub ai_service_stub(channel.get());
+    brpc::Controller controller;
+    controller.set_timeout_ms(kAiServiceRpcTimeoutMs);
+    ai_proto::DeleteSessionsByFileResponse rpc_response;
+    ai_service_stub.DeleteSessionsByFile(&controller, &rpc_request, &rpc_response, nullptr);
+
+    // 检测 RPC 调用是否成功(网络/超时/信道层面的失败)
+    if (controller.Failed())
+    {
+        ERR("AI 子服务 RPC 调用失败, request_id: {}, file_id: {}, 错误信息: {}",
+            request_id, file_id, controller.ErrorText());
+        throw ChatExcelException(ErrorCode::FILE_AI_RPC_ERROR);
+    }
+
+    // 检测 AI 子服务业务处理结果, 业务错误码透传给上层调用方
+    if (rpc_response.error_code() != static_cast<int>(ErrorCode::SUCCESS))
+    {
+        ERR("按文件删除聊天会话失败, request_id: {}, file_id: {}, 错误码: {}, 错误信息: {}",
+            request_id, file_id, rpc_response.error_code(), rpc_response.error_msg());
+        throw ChatExcelException(static_cast<ErrorCode>(rpc_response.error_code()));
+    }
+
+    INFO("按文件删除聊天会话成功, request_id: {}, file_id: {}", request_id, file_id);
+}
+
 } // namespace
 
 FileBusiness::FileBusiness(std::shared_ptr<FileData> file_data,
@@ -548,7 +667,34 @@ void FileBusiness::DeleteFile(const std::string& request_id, const std::string& 
         }
     }
 
-    // TODO: 调用数据库子服务, 删除数据库中对应的 WorkSheet 表数据
+    // 获取该文件对应的全部 WorkSheet 元信息(上传时 tbl_worksheet_info 记录了每个
+    // WorkSheet 对应的数据库表名, 删除文件时需要删除这些 WorkSheet 数据库表)
+    const std::vector<WorkSheetInfo> worksheet_list =
+        worksheet_data_->GetWorkSheetListByFileId(file_info.file_id);
+
+    // 调用数据库子服务删除 WorkSheet 数据库表(Excel 数据统一存储在 excel_connection
+    // 全局连接中), 删除失败不阻断文件删除主流程, 表数据可后续重建
+    std::vector<std::string> worksheet_table_names;
+    worksheet_table_names.reserve(worksheet_list.size());
+    for (const WorkSheetInfo& worksheet_info : worksheet_list)
+    {
+        worksheet_table_names.push_back(worksheet_info.table_name);
+    }
+    DropTableExcelFromRpc(channel_manager_, request_id, kExcelDbConnectionId,
+                          worksheet_table_names);
+
+    // 调用 AI 子服务删除关联了该文件的所有聊天会话(Excel/SQLite 文件删除时
+    // 都要清理其关联的用户会话信息), 删除失败不阻断文件删除主流程, 会话可后续手动清理
+    try
+    {
+        DeleteChatSessionsByFileFromRpc(channel_manager_, request_id, user_id,
+                                        file_info.file_id);
+    }
+    catch (const ChatExcelException& e)
+    {
+        ERR("按文件删除关联聊天会话失败, request_id: {}, file_id: {}, 错误信息: {}",
+            request_id, file_id, e.what());
+    }
 
     // 删除 WorkSheet 元信息(MySQL 与缓存)
     worksheet_data_->DeleteWorkSheetByFileId(file_info.file_id);

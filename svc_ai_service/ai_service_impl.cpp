@@ -427,6 +427,58 @@ void AiServiceImpl::UpdateSessionFile(google::protobuf::RpcController* /*control
     }
 }
 
+void AiServiceImpl::DeleteSessionsByFile(google::protobuf::RpcController* /*controller*/,
+                                         const proto::DeleteSessionsByFileRequest* request,
+                                         proto::DeleteSessionsByFileResponse* response,
+                                         google::protobuf::Closure* done)
+{
+    // 管理 RPC 响应的内存生命周期, 函数结束析构时自动调用 done->Run() 返回响应
+    brpc::ClosureGuard closure_guard(done);
+
+    // 响应中回填请求 ID, 用于请求与响应的链路追踪
+    response->set_request_id(request->request_id());
+
+    try
+    {
+        // 参数解析与校验, 逐项校验参数并返回对应的错误码, 便于上层直接定位具体错误
+        if (request->user_id().empty())
+        {
+            ERR("DeleteSessionsByFile 接口请求参数错误, user_id 为空, request_id: {}",
+                request->request_id());
+            SetErrorResponse(response, ErrorCode::AI_SERVICE_USER_ID_EMPTY);
+            return;
+        }
+        else if (request->file_id().empty())
+        {
+            ERR("DeleteSessionsByFile 接口请求参数错误, file_id 为空, request_id: {}",
+                request->request_id());
+            SetErrorResponse(response, ErrorCode::AI_SERVICE_FILE_ID_EMPTY);
+            return;
+        }
+
+        // 调用业务逻辑层删除关联了该文件的所有聊天会话
+        ai_business_->DeleteChatSessionsByFileId(request->request_id(), request->user_id(),
+                                                 request->file_id());
+
+        // 成功仅设置成功错误码, 不添加成功的描述信息
+        response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
+    }
+    catch (const ChatExcelException& e)
+    {
+        // 业务处理异常, 按照业务处理失败的逻辑进行处理
+        ERR("DeleteSessionsByFile 接口业务处理异常, file_id: {}, request_id: {}, 错误信息: {}",
+            request->file_id(), request->request_id(), e.what());
+        SetErrorResponse(response, e.error_code());
+    }
+    catch (const std::exception& e)
+    {
+        // 非预期异常, 统一按照业务处理失败的逻辑进行处理
+        ERR("DeleteSessionsByFile 接口非预期异常, file_id: {}, request_id: {}, 错误信息: {}",
+            request->file_id(), request->request_id(), e.what());
+        SetErrorResponse(response, ErrorCode::AI_SERVICE_INTERNAL_ERROR);
+    }
+}
+
 void AiServiceImpl::SendMessage(google::protobuf::RpcController* controller,
                                 const proto::SendMessageRequest* request,
                                 proto::SendMessageResponse* response,

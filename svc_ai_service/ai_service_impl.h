@@ -109,6 +109,18 @@ public:
                                    google::protobuf::Closure* done) override;
 
     /**
+     * @brief 按文件 ID 删除关联的所有聊天会话
+     * @param controller RPC 控制器
+     * @param request RPC 请求, 携带用户 ID 与文件 ID
+     * @param response RPC 响应, 携带错误码与错误信息
+     * @param done RPC 结束回调, 由 brpc::ClosureGuard 管理生命周期
+     */
+    virtual void DeleteSessionsByFile(google::protobuf::RpcController* controller,
+                                      const proto::DeleteSessionsByFileRequest* request,
+                                      proto::DeleteSessionsByFileResponse* response,
+                                      google::protobuf::Closure* done) override;
+
+    /**
      * @brief 发送消息(流式响应), 参数校验失败时通过普通 HTTP JSON 响应返回错误码;
      *        校验通过后设置 HTTP 流式响应头并创建流式响应附件, done->Run() 触达后
      *        HTTP 响应头(分块传输)立即返回给网关, 消息处理流程放到后台线程异步执行,

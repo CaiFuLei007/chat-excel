@@ -38,6 +38,11 @@ std::vector<ChatSessionInfo> ChatSessionManager::GetChatSessionListByUserId(cons
     return chat_session_data_->GetChatSessionListByUserId(user_id);
 }
 
+std::vector<ChatSessionInfo> ChatSessionManager::GetChatSessionListByFileId(const std::string& file_id)
+{
+    return chat_session_data_->GetChatSessionListByFileId(file_id);
+}
+
 ChatSessionInfo ChatSessionManager::GetChatSessionBySessionId(const std::string& chat_session_id)
 {
     // 读策略(Cache-Aside): 先从缓存中读取聊天会话元数据

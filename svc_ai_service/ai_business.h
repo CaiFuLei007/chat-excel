@@ -102,6 +102,16 @@ public:
     void UpdateChatSessionFileId(const std::string& request_id, const std::string& user_id,
                                  const std::string& chat_session_id, const std::string& file_id);
 
+    /**
+     * @brief 删除指定用户关联了指定文件的所有聊天会话(元数据与 ChatSDK 中的会话与消息),
+     *        文件删除时联动清理关联会话, 会话不存在时跳过不抛出异常
+     * @param request_id 请求 ID, 用于日志链路追踪
+     * @param user_id 用户 ID
+     * @param file_id 文件 ID
+     */
+    void DeleteChatSessionsByFileId(const std::string& request_id, const std::string& user_id,
+                                    const std::string& file_id);
+
 private:
     /**
      * @brief 获取聊天会话元数据并校验会话归属(读策略 Cache-Aside),

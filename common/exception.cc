@@ -144,6 +144,7 @@ std::string ErrorMessage(ErrorCode error_code)
         {static_cast<int>(ErrorCode::AI_SUMMARY_CONTENT_PARSE_ERROR), "总结内容 JSON 解析失败"},
         {static_cast<int>(ErrorCode::AI_EMAIL_HISTORY_ERROR), "历史消息中缺少分析消息或总结消息"},
         {static_cast<int>(ErrorCode::AI_USER_EMAIL_EMPTY), "用户邮箱为空"},
+        {static_cast<int>(ErrorCode::CHAT_SESSION_GET_LIST_BY_FILE_ID_ERROR), "通过文件 ID 获取聊天会话列表失败"},
     };
 
     auto iter = kErrorMessageMap.find(static_cast<int>(error_code));

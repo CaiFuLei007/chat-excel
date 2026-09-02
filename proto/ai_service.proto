@@ -176,6 +176,19 @@ message UpdateSessionFileResponse {
     string error_msg = 3; // 错误描述符
 }
 
+//////////////////////// 按文件删除关联会话 ////////////////////////
+message DeleteSessionsByFileRequest {
+    string request_id = 1; // 请求ID
+    string user_id = 2; // 用户ID
+    string file_id = 3; // 文件ID
+}
+
+message DeleteSessionsByFileResponse {
+    string request_id = 1; // 请求ID
+    int32 error_code = 2; // 错误码
+    string error_msg = 3; // 错误描述符
+}
+
 //////////////////////// AI模型服务RPC定义 ////////////////////////
 service AIService {
     // 获取支持模型
@@ -190,6 +203,8 @@ service AIService {
     rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
     // 更新会话文件关联
     rpc UpdateSessionFile(UpdateSessionFileRequest) returns (UpdateSessionFileResponse);
+    // 按文件ID删除关联的所有聊天会话(文件删除时联动清理关联会话)
+    rpc DeleteSessionsByFile(DeleteSessionsByFileRequest) returns (DeleteSessionsByFileResponse);
     // 发送消息(流式响应)
     rpc SendMessage(SendMessageRequest) returns (stream SendMessageResponse);
 }

@@ -417,6 +417,9 @@ enum class ErrorCode : int
     // 用户邮箱为空
     AI_USER_EMAIL_EMPTY = 635,
 
+    // 通过文件 ID 获取聊天会话列表失败
+    CHAT_SESSION_GET_LIST_BY_FILE_ID_ERROR = 636,
+
     // ==================== 子服务错误码范围预留 ====================
     // 文件子服务错误码范围 200 - 299, eg: FILE_NOT_FOUND 文件不存在
     // 数据库子服务错误码范围 300 - 399, eg: DB_CONNECTION_FAILED 数据库连接失败

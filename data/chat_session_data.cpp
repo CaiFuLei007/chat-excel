@@ -278,6 +278,33 @@ std::vector<ChatSessionInfo> ChatSessionData::GetChatSessionListByUserId(const s
     }
 }
 
+std::vector<ChatSessionInfo> ChatSessionData::GetChatSessionListByFileId(const std::string& file_id)
+{
+    try
+    {
+        // SQL : SELECT id, chat_session_id, user_id, title, create_time, update_time,
+        //       total_message_count, model_name, file_id, type, connection_info
+        //       FROM tbl_chat_session WHERE file_id = '{file_id}'
+        odb::transaction transaction(mysql_handle_->begin());
+        odb::result<ChatSessionEntity> result(mysql_handle_->query<ChatSessionEntity>(
+            odb::query<ChatSessionEntity>::file_id == file_id));
+
+        std::vector<ChatSessionInfo> chat_session_list;
+        for (odb::result<ChatSessionEntity>::iterator iter = result.begin(); iter != result.end(); ++iter)
+        {
+            chat_session_list.push_back(EntityToInfo(*iter));
+        }
+        transaction.commit();
+        INFO("通过文件 ID 获取聊天会话列表成功, file_id: {}, 会话数量: {}", file_id, chat_session_list.size());
+        return chat_session_list;
+    }
+    catch (const odb::exception& e)
+    {
+        ERR("通过文件 ID 获取聊天会话列表失败, file_id: {}, 错误: {}", file_id, e.what());
+        throw ChatExcelException(ErrorCode::CHAT_SESSION_GET_LIST_BY_FILE_ID_ERROR);
+    }
+}
+
 void ChatSessionData::SaveChatSessionToCache(const ChatSessionInfo& chat_session_info)
 {
     // 序列化聊天会话信息为 JSON 字符串

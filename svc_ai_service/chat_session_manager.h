@@ -48,6 +48,13 @@ public:
     std::vector<ChatSessionInfo> GetChatSessionListByUserId(const std::string& user_id);
 
     /**
+     * @brief 通过文件 ID 获取关联该文件的所有聊天会话元数据, 直接从 MySQL 中读取
+     * @param file_id 文件 ID
+     * @return 聊天会话元数据列表, 没有会话关联该文件时返回空列表
+     */
+    std::vector<ChatSessionInfo> GetChatSessionListByFileId(const std::string& file_id);
+
+    /**
      * @brief 通过会话 ID 获取指定聊天会话元数据(读策略 Cache-Aside: 先查缓存,
      *        未命中时查 MySQL 并回填缓存), 会话不存在时抛出异常
      * @param chat_session_id 聊天会话 ID

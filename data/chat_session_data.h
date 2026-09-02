@@ -60,6 +60,13 @@ public:
     std::vector<ChatSessionInfo> GetChatSessionListByUserId(const std::string& user_id);
 
     /**
+     * @brief 通过文件 ID 获取关联该文件的所有聊天会话信息
+     * @param file_id 文件 ID
+     * @return 聊天会话信息列表, 没有会话关联该文件时返回空列表
+     */
+    std::vector<ChatSessionInfo> GetChatSessionListByFileId(const std::string& file_id);
+
+    /**
      * @brief 保存聊天会话数据到缓存, 通过事务批量执行写入与过期时间设置
      * @param chat_session_info 聊天会话信息
      */

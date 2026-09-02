@@ -16,3 +16,10 @@ HTTP 请求参数中不需要再传入用户 ID , 直接通过会话 ID 获取�
 ## 2. GatewayServiceImpl::HandleAiSessionCreate 支持创建 plain 会话
 
 1. 校验参数类型的时候新增 plain 类型, 会话类型只能是 excel , database , plain
+
+
+## 3. 对删除文件代码逻辑进行检查
+
+1. 前端删除 Excel 文件之后 , 文件子服务中的 Excel 元信息 , fastdfs 中的 Excel 数据 , 文件子服务中 tbl_worksheets 表中所有 Excel 的 WorkSheet 元信息 , 数据库子服务中所有 WorkSheet 数据库表 , Excel 对应的关联的用户 Session 会话信息(AI 子服务中进行管理)都要进行删除
+2. 前端发送删除 SQLite 文件请求之后 , fastdfs 中的 SQLite 数据 , SQLite 管理的会话信息这两部分内容都要删除
+3. 前端发送删除某个指定会话后 , 只需要将 AI 子服务中的 Session 会话信息删除即可
