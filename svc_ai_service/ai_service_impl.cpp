@@ -148,7 +148,8 @@ void AiServiceImpl::CreateSession(google::protobuf::RpcController* /*controller*
             SetErrorResponse(response, ErrorCode::AI_SERVICE_SESSION_TYPE_EMPTY);
             return;
         }
-        else if (request->session_type() != "excel" && request->session_type() != "database")
+        else if (request->session_type() != "excel" && request->session_type() != "database" &&
+                 request->session_type() != "plain")
         {
             ERR("CreateSession 接口请求参数错误, session_type 无效: {}, request_id: {}",
                 request->session_type(), request->request_id());

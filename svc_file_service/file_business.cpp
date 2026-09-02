@@ -80,14 +80,15 @@ std::string SanitizeTableNamePart(const std::string& name)
 
 /**
  * @brief 基于解析结果生成数据库表名称, 格式为 {file_id}_{worksheet_name},
- *        名称中的字母/数字/汉字/下划线保留, 其余字符(含 uuid 中的连字符)替换为下划线
+ *        名称中的字母/数字/汉字/下划线保留, 其余字符(含 uuid 中的连字符)替换为下划线;
+ *        表名以 excel_ 前缀开头, 避免文件 ID 以数字开头时生成的表名非法(标识符不允许数字开头)
  * @param file_id 文件 ID
  * @param worksheet_name 工作表名称
  * @return 生成的数据库表名称
  */
 std::string GenerateTableName(const std::string& file_id, const std::string& worksheet_name)
 {
-    return SanitizeTableNamePart(file_id) + "_" + SanitizeTableNamePart(worksheet_name);
+    return "excel_" + SanitizeTableNamePart(file_id) + "_" + SanitizeTableNamePart(worksheet_name);
 }
 
 /**
@@ -602,7 +603,7 @@ void FileBusiness::UploadFileData(const std::string& request_id, const std::stri
         ParseWorksheetsFromRpc(channel_manager_, request_id, fastdfs_file_id, worksheet_names);
 
     // 通过数据库子服务将解析的 Excel 数据保存到数据库中, 使用 Excel 数据库全局连接,
-    // 表名称使用 {file_id}_{worksheet_name}; 同时基于解析结果生成数据库表名称,
+    // 表名称使用 excel_{file_id}_{worksheet_name}; 同时基于解析结果生成数据库表名称,
     // 构建 WorkSheet 信息保存到 WorkSheet 表
     std::vector<WorkSheetInfo> worksheet_list;
     worksheet_list.reserve(worksheet_datas.size());

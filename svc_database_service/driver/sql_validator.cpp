@@ -743,6 +743,21 @@ std::string SQLValidator::RemoveComments(const std::string& sql)
                 ++i;
                 result += ' ';
             }
+            else if (current == '-' && next == '-' &&
+                     (i + 2 >= sql.size() || sql[i + 2] == ' ' || sql[i + 2] == '\t'))
+            {
+                // MySQL 单行注释(-- 后须跟空白或位于语句末尾, 避免误判双负号运算),
+                // 注释符与注释内容均不保留
+                state = SqlScanState::IN_LINE_COMMENT;
+                ++i;
+                result += ' ';
+            }
+            else if (current == '#')
+            {
+                // MySQL 另一种单行注释符(#), 注释符与注释内容均不保留
+                state = SqlScanState::IN_LINE_COMMENT;
+                result += ' ';
+            }
             else
             {
                 result += current;

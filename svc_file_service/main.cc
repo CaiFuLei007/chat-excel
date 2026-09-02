@@ -73,8 +73,9 @@ DEFINE_string(service_name, "FileService", "文件子服务名称");
 DEFINE_string(service_addr, "127.0.0.1:8084", "文件子服务注册地址");
 
 // 需要监控的子服务名称列表(逗号分隔), Excel 解析子服务负责 Excel 文件解析,
-// 数据库子服务负责 Excel 数据的保存与预览查询
-DEFINE_string(care_service_names, "ExcelParseService,DataBaseService",
+// 数据库子服务负责 Excel 数据的保存与预览查询,
+// AI 子服务提供会话文件映射表更新接口(文件上传/删除时调用)
+DEFINE_string(care_service_names, "ExcelParseService,DataBaseService,AIService",
               "需要监控的子服务名称列表(逗号分隔)");
 
 // 服务注册 TTL(秒)

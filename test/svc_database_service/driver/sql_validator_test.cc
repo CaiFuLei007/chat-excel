@@ -45,6 +45,23 @@ TEST(GetSqlTypeTest, ReturnUnknownForUnsupportedStatement)
     EXPECT_EQ(SQLValidator::GetSqlType("   \t\n  "), SqlType::UNKNOWN);
 }
 
+// 正常情况: 语句开头的 -- 单行注释被移除, 不影响语句类型识别(模型生成的 SQL 常带注释)
+TEST(GetSqlTypeTest, IgnoreLeadingDashDashComment)
+{
+    EXPECT_EQ(SQLValidator::GetSqlType("-- 统计用户总数\nSELECT COUNT(*) FROM users"),
+              SqlType::SELECT);
+    EXPECT_EQ(SQLValidator::GetSqlType("-- 注释一\n-- 注释二\nSELECT 1"), SqlType::SELECT);
+    EXPECT_EQ(SQLValidator::GetSqlType("# MySQL 井号注释\nSELECT 1"), SqlType::SELECT);
+    EXPECT_EQ(SQLValidator::GetSqlType("-- 注释\nUPDATE users SET name = 'tom'"),
+              SqlType::UPDATE);
+}
+
+// 边界情况: 双负号后无空白时是双负号运算而非注释, 不能误判
+TEST(GetSqlTypeTest, DoubleMinusWithoutWhitespaceIsNotComment)
+{
+    EXPECT_EQ(SQLValidator::GetSqlType("SELECT 1--2"), SqlType::SELECT);
+}
+
 // 正常情况: SELECT/SHOW/DESC 判定为只读语句
 TEST(IsReadOnlySqlTest, ReturnTrueForReadOnlyStatement)
 {

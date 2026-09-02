@@ -7,6 +7,16 @@
 // brpc/server.h 须在 cpp-toolkit/redis.h 之前包含 : sw/redis++ 引入的 hiredis/read.h
 // 会以宏定义 REDIS_REPLY_STRING 等, 与 brpc/redis_reply.h 的同名枚举值冲突
 #include <brpc/server.h>
+// aichat_sdk/base/util/mylog.h 定义的 TRACE/DBG/INFO/WARN/ERR/CRIT 宏与
+// cpp-toolkit/logger.h 的同名宏冲突, 且其日志器需显式初始化才能使用,
+// 包含后立即取消定义这些宏, 统一以 cpp-toolkit 的日志宏为准
+#include <aichat_sdk/base/util/mylog.h>
+#undef TRACE
+#undef DBG
+#undef INFO
+#undef WARN
+#undef ERR
+#undef CRIT
 #include <cpp-toolkit/logger.h>
 #include <cpp-toolkit/odb.h>
 #include <cpp-toolkit/redis.h>
@@ -255,6 +265,13 @@ int main(int argc, char* argv[])
     gflags::ParseCommandLineFlags(&argc, &argv, true);
 
     // 2. 初始化日志记录(异步日志, 不阻塞业务线程)
+    //    注意顺序 : aichat_sdk 与 cpp-toolkit 的 initLogger 都会调用 spdlog::init_thread_pool
+    //    重置全局线程池(销毁旧线程池), 后初始化的一方会导致先创建的异步日志器失效,
+    //    故 aichat_sdk 必须先初始化, cpp-toolkit 业务日志最后初始化, 保证业务日志可用;
+    //    aichat_sdk 的静态 logger 不会自动初始化, 未初始化时模型注册/调用过程中的
+    //    日志打印会因空指针导致段错误
+    aichat_sdk::Logger::initLogger("aichat_sdk", FLAGS_logger_file, ParseLogLevel(FLAGS_log_level));
+
     //    loggerName 必须非空 : spdlog 注册中心已存在名为空字符串的默认 logger, 空名称会因重名抛出异常
     cpp_toolkit::logger_settings logger_settings;
     logger_settings.async = true;

@@ -57,9 +57,11 @@ constexpr const char* kEmailStartTag = "<EMAIL_START>";
 constexpr const char* kEmailEndTag = "<EMAIL_END>";
 constexpr const char* kEmailToolCommand = "sendEmail";
 
-// 模型回复中的标题与分析内容标签, 邮件参数构建时使用
+// 模型回复中的标题, 任务列表与分析内容标签, 邮件参数构建时使用
 constexpr const char* kTitleStartTag = "<TITLE_START>";
 constexpr const char* kTitleEndTag = "<TITLE_END>";
+constexpr const char* kTasksStartTag = "<TASKS_START>";
+constexpr const char* kTasksEndTag = "<TASKS_END>";
 constexpr const char* kAnalysisStartTag = "<ANALYSIS_START>";
 constexpr const char* kAnalysisEndTag = "<ANALYSIS_END>";
 
@@ -84,20 +86,25 @@ constexpr size_t kSampleDataLimit = 5;
 // 会话标题最大字符数
 constexpr size_t kSessionTitleMaxChars = 20;
 
-// 需要过滤后才能透传给前端的开标签与闭标签(SQL 标签与邮件指令标签)
+// 需要过滤后才能透传给前端的开标签与闭标签(SQL 标签与邮件指令标签, 区间内容一并过滤)
 const std::vector<std::string> kFilterOpenTags = {kSqlStartTag, kEmailStartTag};
 const std::vector<std::string> kFilterCloseTags = {kSqlEndTag, kEmailEndTag};
 
+// 仅剔除标签本身但保留区间内容的标签(标题, 任务列表与分析标签, 区间内容正常透传给前端)
+const std::vector<std::string> kMarkerTags = {kTitleStartTag, kTitleEndTag,
+                                              kTasksStartTag, kTasksEndTag,
+                                              kAnalysisStartTag, kAnalysisEndTag};
+
 /**
- * @brief 标签流式过滤器, 基于跨数据块状态机过滤模型响应中的标签区间内容,
- *        使 SQL 标签与邮件指令标签内容不透传给前端;
+ * @brief 标签流式过滤器, 基于跨数据块状态机过滤模型响应中的标签内容,
+ *        SQL 标签与邮件指令标签的区间内容整体过滤, 标题/任务列表/分析标签仅剔除标签本身;
  *        标签可能被模型响应的分块边界切断, 暂存可能是标签前缀的尾部内容直至可以判定
  */
 class TagStreamFilter
 {
 public:
     /**
-     * @brief 输入一个模型响应数据块, 返回过滤标签区间后可以透传的内容
+     * @brief 输入一个模型响应数据块, 返回过滤后可以透传的内容
      * @param chunk 模型响应数据块
      * @return 过滤后可以透传的内容
      */
@@ -107,22 +114,7 @@ public:
         std::string output;
         while (true)
         {
-            if (!in_tag_)
-            {
-                const size_t pos = FindEarliestTag(pending_, kFilterOpenTags);
-                if (pos == std::string::npos)
-                {
-                    // 未找到开标签, 透传除标签前缀外的内容, 标签前缀暂存等待后续数据块
-                    const size_t keep = LongestTagPrefixSuffix(pending_, kFilterOpenTags);
-                    output.append(pending_, 0, pending_.size() - keep);
-                    pending_.erase(0, pending_.size() - keep);
-                    break;
-                }
-                output.append(pending_, 0, pos);
-                pending_.erase(0, pos + MatchedTagSize(pending_, pos, kFilterOpenTags));
-                in_tag_ = true;
-            }
-            else
+            if (in_tag_)
             {
                 const size_t pos = FindEarliestTag(pending_, kFilterCloseTags);
                 if (pos == std::string::npos)
@@ -134,6 +126,34 @@ public:
                 }
                 pending_.erase(0, pos + MatchedTagSize(pending_, pos, kFilterCloseTags));
                 in_tag_ = false;
+                continue;
+            }
+
+            // 未处于过滤区间时, 同时查找需整体过滤的开标签与仅剔除标签本身的标签
+            const size_t filter_pos = FindEarliestTag(pending_, kFilterOpenTags);
+            const size_t marker_pos = FindEarliestTag(pending_, kMarkerTags);
+            if (filter_pos == std::string::npos && marker_pos == std::string::npos)
+            {
+                // 未找到任何标签, 透传除标签前缀外的内容, 标签前缀暂存等待后续数据块
+                const size_t filter_keep = LongestTagPrefixSuffix(pending_, kFilterOpenTags);
+                const size_t marker_keep = LongestTagPrefixSuffix(pending_, kMarkerTags);
+                const size_t keep = std::max(filter_keep, marker_keep);
+                output.append(pending_, 0, pending_.size() - keep);
+                pending_.erase(0, pending_.size() - keep);
+                break;
+            }
+            if (filter_pos <= marker_pos)
+            {
+                // 进入过滤区间, 区间内容(含其间的标记标签)一并丢弃
+                output.append(pending_, 0, filter_pos);
+                pending_.erase(0, filter_pos + MatchedTagSize(pending_, filter_pos, kFilterOpenTags));
+                in_tag_ = true;
+            }
+            else
+            {
+                // 标题/分析标签仅剔除标签本身, 区间内容照常透传
+                output.append(pending_, 0, marker_pos);
+                pending_.erase(0, marker_pos + MatchedTagSize(pending_, marker_pos, kMarkerTags));
             }
         }
         return output;
