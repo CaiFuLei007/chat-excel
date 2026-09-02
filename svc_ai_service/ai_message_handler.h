@@ -176,14 +176,15 @@ private:
                                        const std::vector<std::vector<std::string>>& rows);
 
     /**
-     * @brief 更新会话元数据, 消息总数加一, 会话第一条消息时以用户消息前 20 个字符
-     *        更新标题, 并刷新最近一次消息时间
+     * @brief 更新会话元数据, 消息总数加一, 会话第一条消息时更新标题并刷新最近一次消息时间,
+     *        标题优先使用模型分析回复中提取的标题, 提取不到时以用户消息前 20 个字符作为标题
      * @param request_id 请求 ID, 用于日志链路追踪
-     * @param session_info 会话元数据(按值传递, 内部修改后写回数据库并删除缓存)
-     * @param user_message 用户消息内容, 用于生成会话标题
+     * @param session_info 聊天会话元数据(按值传递, 内部修改后写回数据库并删除缓存)
+     * @param user_message 用户消息内容, 模型标题缺失时用于生成会话标题
+     * @param model_title 模型分析回复中提取的标题, 提取不到时为空字符串
      */
     void UpdateSessionMetadata(const std::string& request_id, ChatSessionInfo session_info,
-                               const std::string& user_message);
+                               const std::string& user_message, const std::string& model_title);
 
     /**
      * @brief 获取指定用户邮箱, 通过用户子服务查询用户信息并返回邮箱

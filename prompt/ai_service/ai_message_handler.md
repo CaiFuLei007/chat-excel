@@ -116,3 +116,10 @@ AIMessageHandler 提供发送消息的接口 , 流程如下 :
 
 
 请求仔细阅读业务逻辑层的要求,然后帮我复述一遍,并给出你的实现详细思路,等我确认你和我理解一致之后,我再逐步告诉你实现实现步骤
+
+
+## 9. 修改会话 Title 字段的生成逻辑
+
+1. 当前 title 字段的生成逻辑 : UpdateSessionMetadata(context.request_id, session_info, context.message); 直接将用户发送的消息作为会话标题
+2. 不使用用户发送的消息作为 title 字段 , 使用模型在对于问题的chat-excel/svc_ai_service/prompt_template/analyze_prompt.md 分析提示词中返回的 <TITLE_START> ... <TITLE_END> 中的内容作为会话标题
+3. 但是对于 plain 场景 , 不存在分析提示词的构建 , 因此如果 AI 的消息中不包含 <TITLE_START> ... <TITLE_END> 标签 , 则直接将用户发送的消息(截取前 20 字)作为会话标题

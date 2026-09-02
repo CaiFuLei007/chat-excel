@@ -417,9 +417,9 @@ void AIMessageHandler::SendPlainMessage(const SendMessageContext& context,
     stream_callback("", true);
     INFO("普通消息发送完成, request_id: {}, 响应长度: {}", context.request_id, full_response.size());
 
-    // 更新会话元数据(消息总数, 标题, 最近一次消息时间)
+    // 更新会话元数据(消息总数, 标题, 最近一次消息时间), plain 场景无分析标题, 使用用户消息生成标题
     ChatSessionInfo session_info = chat_session_manager_->GetChatSessionBySessionId(context.chat_session_id);
-    UpdateSessionMetadata(context.request_id, session_info, context.message);
+    UpdateSessionMetadata(context.request_id, session_info, context.message, "");
 }
 
 bool AIMessageHandler::IsEmailToolCall(const std::string& model_response)
@@ -533,12 +533,15 @@ void AIMessageHandler::HandleAnalysisChat(const SendMessageContext& context,
     }
     INFO("分析阶段完成, request_id: {}, 响应长度: {}", context.request_id, analysis_response.size());
 
+    // 提取模型分析回复中生成的会话标题, 会话首条消息时作为标题使用
+    const std::string model_title = ExtractTaggedContent(analysis_response, kTitleStartTag, kTitleEndTag);
+
     // 4. 检测模型是否回复了发送邮件工具调用, 命中则执行发邮件流程并结束, 不执行 SQL
     if (IsEmailToolCall(analysis_response))
     {
         INFO("检测到发送邮件工具调用, request_id: {}", context.request_id);
         SendEmail(context, stream_callback);
-        UpdateSessionMetadata(context.request_id, session_info, context.message);
+        UpdateSessionMetadata(context.request_id, session_info, context.message, model_title);
         return;
     }
 
@@ -596,7 +599,7 @@ void AIMessageHandler::HandleAnalysisChat(const SendMessageContext& context,
     stream_callback(final_response, true);
 
     // 10. 更新会话元数据(消息总数, 标题, 最近一次消息时间)
-    UpdateSessionMetadata(context.request_id, session_info, context.message);
+    UpdateSessionMetadata(context.request_id, session_info, context.message, model_title);
 }
 
 std::vector<std::string> AIMessageHandler::GetTableNames(const SendMessageContext& context,
@@ -887,12 +890,15 @@ std::string AIMessageHandler::BuildFinalResponseJson(const std::string& summary,
 }
 
 void AIMessageHandler::UpdateSessionMetadata(const std::string& request_id, ChatSessionInfo session_info,
-                                             const std::string& user_message)
+                                             const std::string& user_message,
+                                             const std::string& model_title)
 {
-    // 会话第一条消息时以用户消息前 20 个字符作为会话标题
+    // 会话第一条消息时更新标题, 优先使用模型分析回复中提取的标题,
+    // 提取不到时回退为用户消息前 20 个字符, 保证标题不为空
     if (session_info.total_message_count == 0)
     {
-        session_info.title = TruncateUtf8(user_message, kSessionTitleMaxChars);
+        const std::string& title = model_title.empty() ? user_message : model_title;
+        session_info.title = TruncateUtf8(title, kSessionTitleMaxChars);
     }
     session_info.total_message_count += 1;
     session_info.update_time = static_cast<unsigned long long>(time(nullptr));
