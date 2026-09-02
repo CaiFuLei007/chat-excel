@@ -141,11 +141,13 @@ private:
      * @param context 发送消息上下文
      * @param sql 待执行的 SQL 语句
      * @param columns SQL 执行结果的列名列表
+     * @param column_types SQL 执行结果的列类型列表, 与列名列表一一对应
      * @param rows SQL 执行结果的行数据列表, 每行为单元格字符串列表
      * @return SQL 执行结果 JSON 字符串, 包含列名与行数据
      */
     std::string ExecuteSql(const SendMessageContext& context, const std::string& sql,
                            std::vector<std::string>& columns,
+                           std::vector<std::string>& column_types,
                            std::vector<std::vector<std::string>>& rows);
 
     /**
@@ -160,15 +162,17 @@ private:
 
     /**
      * @brief 构建最终响应 JSON, 将总结内容, 可视化显示类型与 SQL 执行结果组装为
-     *        {"summary", "displayType", "data": {"columns", "rows", "tables"}} 结构返回前端
+     *        {"summary", "displayType", "data": {"columns", "column_types", "rows", "tables"}} 结构返回前端
      * @param summary 总结阶段生成的总结内容
      * @param chart_type 总结阶段推荐的图表类型
      * @param columns SQL 执行结果的列名列表
+     * @param column_types SQL 执行结果的列类型列表, 与列名列表一一对应
      * @param rows SQL 执行结果的行数据列表
      * @return 最终响应 JSON 字符串
      */
     std::string BuildFinalResponseJson(const std::string& summary, const std::string& chart_type,
                                        const std::vector<std::string>& columns,
+                                       const std::vector<std::string>& column_types,
                                        const std::vector<std::vector<std::string>>& rows);
 
     /**

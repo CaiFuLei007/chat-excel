@@ -21,3 +21,41 @@
 ## 5. 数据接口统一定义
 
 1. 阅读 chat-excel/svc_ai_service AI 子服务所有实现 , 将数据接口的定义统一放置在 chat-excel/svc_ai_service/common.h 中
+
+## 6. 增加 AIMessageHandler 发送总结消息的字段
+
+现在的字段如下 : 
+```json
+{
+    "summary": "总结阶段生成的总结内容",
+    "displayType": "总结节点生成的可视化显示类型",
+    "data": {                               // data为sql执行结果
+        "columns": ["列1", "列2"],          // 第一张表的列
+        "rows": [["值1", "值2"]],           // 第一张表的行
+        "tables": [                            // 所有表数据（完整保留）
+            {"columns": [...], "rows": [...]},
+            {"columns": [...], "rows": [...]},
+            {"columns": [...], "rows": [...]}
+        ]
+    }
+}
+```
+
+为了让 AI 能够更好的展示数据 ,需要额外添加一个 column_types 字段 , 来表示每列的数据类型 :
+修改后字段:
+```json
+{
+    "summary": "总结阶段生成的总结内容",
+    "displayType": "总结节点生成的可视化显示类型",
+    "data": {                               // data为sql执行结果
+        "columns": ["列1", "列2"],          // 第一张表的列
+        "column_types": ["string", "string"], // 第一张表的列类型
+        "rows": [["值1", "值2"]],           // 第一张表的行
+        "tables": [                            // 所有表数据（完整保留）
+            {"columns": [...], "rows": [...]},
+            {"columns": [...], "rows": [...]},
+            {"columns": [...], "rows": [...]}
+        ]
+    }
+}
+```

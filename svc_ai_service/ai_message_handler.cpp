@@ -554,8 +554,9 @@ void AIMessageHandler::HandleAnalysisChat(const SendMessageContext& context,
 
     // 6. 通过数据库子服务执行 SQL 语句
     std::vector<std::string> columns;
+    std::vector<std::string> column_types;
     std::vector<std::vector<std::string>> rows;
-    const std::string result_json = ExecuteSql(context, sql, columns, rows);
+    const std::string result_json = ExecuteSql(context, sql, columns, column_types, rows);
 
     // 7. 构建总结提示词并发送给模型, 生成总结内容
     const std::string summary_prompt = BuildSummaryPrompt(context, result_json);
@@ -582,7 +583,7 @@ void AIMessageHandler::HandleAnalysisChat(const SendMessageContext& context,
     INFO("总结阶段完成, request_id: {}, 图表类型: {}", context.request_id, chart_type);
 
     // 8. 组装最终响应 JSON 并一次性发送给前端
-    const std::string final_response = BuildFinalResponseJson(summary, chart_type, columns, rows);
+    const std::string final_response = BuildFinalResponseJson(summary, chart_type, columns, column_types, rows);
     stream_callback(final_response, true);
 
     // 9. 更新会话元数据(消息总数, 标题, 最近一次消息时间)
@@ -755,6 +756,7 @@ std::string AIMessageHandler::BuildSummaryPrompt(const SendMessageContext& conte
 
 std::string AIMessageHandler::ExecuteSql(const SendMessageContext& context, const std::string& sql,
                                          std::vector<std::string>& columns,
+                                         std::vector<std::string>& column_types,
                                          std::vector<std::vector<std::string>>& rows)
 {
     cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(kDatabaseServiceName);
@@ -791,6 +793,7 @@ std::string AIMessageHandler::ExecuteSql(const SendMessageContext& context, cons
     }
 
     columns.assign(rpc_response.columns().begin(), rpc_response.columns().end());
+    column_types.assign(rpc_response.column_types().begin(), rpc_response.column_types().end());
     rows.reserve(static_cast<size_t>(rpc_response.rows_size()));
     for (const db_proto::Row& row : rpc_response.rows())
     {
@@ -832,12 +835,18 @@ std::string AIMessageHandler::BuildSqlResultJson(const std::vector<std::string>&
 std::string AIMessageHandler::BuildFinalResponseJson(const std::string& summary,
                                                      const std::string& chart_type,
                                                      const std::vector<std::string>& columns,
+                                                     const std::vector<std::string>& column_types,
                                                      const std::vector<std::vector<std::string>>& rows)
 {
     Json::Value data;
     for (const std::string& column : columns)
     {
         data["columns"].append(column);
+    }
+    // 列类型列表与列名列表一一对应, 供前端更好地展示数据
+    for (const std::string& column_type : column_types)
+    {
+        data["column_types"].append(column_type);
     }
     for (const std::vector<std::string>& row : rows)
     {

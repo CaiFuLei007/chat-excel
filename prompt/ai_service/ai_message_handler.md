@@ -62,6 +62,7 @@ AIMessageHandler 提供发送消息的接口 , 流程如下 :
     "displayType": "总结节点生成的可视化显示类型",
     "data": {                               // data为sql执行结果
         "columns": ["列1", "列2"],          // 第一张表的列
+        "column_types": ["string", "string"], // 第一张表的列类型
         "rows": [["值1", "值2"]],           // 第一张表的行
         "tables": [                            // 所有表数据（完整保留）
             {"columns": [...], "rows": [...]},
