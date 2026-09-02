@@ -582,11 +582,20 @@ void AIMessageHandler::HandleAnalysisChat(const SendMessageContext& context,
     const std::string chart_type = summary_json["chartType"].asString();
     INFO("总结阶段完成, request_id: {}, 图表类型: {}", context.request_id, chart_type);
 
-    // 8. 组装最终响应 JSON 并一次性发送给前端
+    // 8. 组装最终响应 JSON, 并将最终 JSON 作为一条 assistant 消息追加到 ChatSDK,
+    //    保证通过聊天会话 ID 获取历史消息时前端也能正常展示可视化图表
+    //    (模型总结阶段存储的 assistant 消息不含 SQL 执行结果, 无法支撑图表展示)
     const std::string final_response = BuildFinalResponseJson(summary, chart_type, columns, column_types, rows);
+    if (!ai_chat_sdk_->CreateAssistantMessage(context.chat_session_id, final_response))
+    {
+        ERR("最终 JSON 写入 ChatSDK 失败, request_id: {}, chat_session_id: {}",
+            context.request_id, context.chat_session_id);
+    }
+
+    // 9. 将最终响应 JSON 一次性发送给前端
     stream_callback(final_response, true);
 
-    // 9. 更新会话元数据(消息总数, 标题, 最近一次消息时间)
+    // 10. 更新会话元数据(消息总数, 标题, 最近一次消息时间)
     UpdateSessionMetadata(context.request_id, session_info, context.message);
 }
 
