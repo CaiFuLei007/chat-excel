@@ -197,15 +197,18 @@ private:
                                                 const std::string& chat_session_id);
 
     /**
-     * @brief 清理一轮对话中的中间消息, 仅保留快照中的消息(含用户原话)与会话最后一条消息
-     *        (本轮模型最终返回, 可视化最终 JSON 或邮件内容响应), 删除失败仅记录日志不抛出异常
+     * @brief 清理一轮对话中的中间消息, 仅保留快照中的消息(含用户原话)与可选的最后一条
+     *        消息(本轮模型最终返回, 可视化最终 JSON 或邮件内容响应), 删除失败仅记录日志
      * @param request_id 请求 ID, 用于日志链路追踪
      * @param chat_session_id AI 聊天会话 ID
      * @param keep_message_ids 对话开始前的消息 ID 快照列表(含对话开始时写入的用户原话)
+     * @param keep_last_message 是否保留会话最后一条消息, 对话成功时最后一条为模型最终返回
+     *        需要保留, 对话失败时本轮没有最终返回, 传 false 删除全部中间消息
      */
     void CleanupRoundIntermediateMessages(const std::string& request_id,
                                           const std::string& chat_session_id,
-                                          const std::vector<std::string>& keep_message_ids);
+                                          const std::vector<std::string>& keep_message_ids,
+                                          bool keep_last_message);
 
     /**
      * @brief 获取指定用户邮箱, 通过用户子服务查询用户信息并返回邮箱

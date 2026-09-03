@@ -1,10 +1,12 @@
 #include "svc_ai_service/ai_message_handler.h"
 
 #include <algorithm>
+#include <chrono>
 #include <ctime>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -82,7 +84,7 @@ const std::vector<std::string> kSummaryPromptPlaceholders = {"user_input", "resu
 const std::vector<std::string> kEmailPromptPlaceholders = {"email_param", "user_input"};
 
 // 数据表采样数据条数
-constexpr size_t kSampleDataLimit = 5;
+constexpr size_t kSampleDataLimit = 2;
 
 // 会话标题最大字符数
 constexpr size_t kSessionTitleMaxChars = 20;
@@ -292,6 +294,50 @@ std::string ExtractTaggedContent(const std::string& text, const std::string& beg
         return "";
     }
     return Trim(text.substr(begin, end - begin));
+}
+
+/**
+ * @brief 将数据库子服务返回的表结构 JSON 压缩为一行式列名(列类型)文本,
+ *        原始 JSON 逐列携带 nullable/is_primary_key/auto_increment/default_value 等
+ *        冗余元数据, 二十列的大宽表会产生数千字符, 显著放大模型输入并拖慢推理,
+ *        压缩后仅保留列名与列类型, 主键列附加"主键"标记以保留定位价值
+ * @param table_name 数据表名, 用于异常日志定位
+ * @param table_struct_json 数据库子服务返回的表结构 JSON 文本
+ * @return 压缩后的列描述文本, JSON 格式异常时退回原始文本保证提示词可用
+ */
+std::string CompressTableSchema(const std::string& table_name,
+                                const std::string& table_struct_json)
+{
+    Json::Value table_struct;
+    if (!cpp_toolkit::JsonUtil::UnSerialize(table_struct, table_struct_json)
+        || !table_struct.isObject() || !table_struct.isMember("columns")
+        || !table_struct["columns"].isArray())
+    {
+        WARN("表结构 JSON 格式异常, 退回原始文本, 表名: {}", table_name);
+        return table_struct_json;
+    }
+    std::string columns_text;
+    for (const Json::Value& column : table_struct["columns"])
+    {
+        if (!column.isObject() || !column.isMember("name"))
+        {
+            continue;
+        }
+        if (!columns_text.empty())
+        {
+            columns_text += ", ";
+        }
+        columns_text += column["name"].asString();
+        if (column.isMember("type") && column["type"].isString())
+        {
+            columns_text += "(" + column["type"].asString() + ")";
+        }
+        if (column.get("is_primary_key", false).asBool())
+        {
+            columns_text += " 主键";
+        }
+    }
+    return columns_text;
 }
 
 /**
@@ -533,114 +579,154 @@ void AIMessageHandler::HandleAnalysisChat(const SendMessageContext& context,
     const std::vector<std::string> keep_message_ids =
         SnapshotMessageIds(context.request_id, context.chat_session_id);
 
-    // 4. 构建分析提示词并流式发送给模型, 模型响应过滤标签区间内容后实时透传给前端
-    const std::string analyze_prompt =
-        BuildAnalyzePrompt(context, table_schema, table_name_text, data_example);
-    std::string analysis_response;
-    TagStreamFilter stream_filter;
-    ai_chat_sdk_->SendMessageStream(context.chat_session_id, analyze_prompt,
-                                    [&](const std::string& delta, bool finish)
-                                    {
-                                        analysis_response.append(delta);
-                                        const std::string filtered = stream_filter.Feed(delta);
-                                        if (!filtered.empty())
-                                        {
-                                            stream_callback(filtered, false);
-                                        }
-                                        if (finish)
-                                        {
-                                            const std::string tail = stream_filter.Finish();
-                                            if (!tail.empty())
+    // 4 ~ 12. 两阶段交互与消息清理, 对话中途失败时同样清理本轮中间消息, 仅保留用户原话
+    try
+    {
+        // 构建分析提示词并流式发送给模型, 模型响应过滤标签区间内容后实时透传给前端;
+        // 模型偶尔会在长时间思考后返回空响应(推理链路异常/被掐断), 属于瞬时故障,
+        // 空响应时自动重试一次, 重试前本轮未向前端透传任何内容, 重试是安全的
+        const std::string analyze_prompt =
+            BuildAnalyzePrompt(context, table_schema, table_name_text, data_example);
+        constexpr int kMaxAnalysisAttempt = 2;
+        std::string analysis_response;
+        for (int attempt = 1; attempt <= kMaxAnalysisAttempt; ++attempt)
+        {
+            analysis_response.clear();
+            TagStreamFilter stream_filter;
+            ai_chat_sdk_->SendMessageStream(context.chat_session_id, analyze_prompt,
+                                            [&](const std::string& delta, bool finish)
                                             {
-                                                stream_callback(tail, false);
-                                            }
-                                        }
-                                    });
-    if (analysis_response.empty())
-    {
-        ERR("模型分析阶段响应为空, request_id: {}, chat_session_id: {}",
-            context.request_id, context.chat_session_id);
-        throw ChatExcelException(ErrorCode::AI_SERVICE_INTERNAL_ERROR);
-    }
-    INFO("分析阶段完成, request_id: {}, 响应长度: {}", context.request_id, analysis_response.size());
-    // 打印 AI 分析阶段完整输出, 便于排查 SQL 提取与危险操作校验问题
-    INFO("AI 分析阶段输出, request_id: {}, 响应内容: {}", context.request_id, analysis_response);
+                                                analysis_response.append(delta);
+                                                const std::string filtered = stream_filter.Feed(delta);
+                                                if (!filtered.empty())
+                                                {
+                                                    stream_callback(filtered, false);
+                                                }
+                                                if (finish)
+                                                {
+                                                    const std::string tail = stream_filter.Finish();
+                                                    if (!tail.empty())
+                                                    {
+                                                        stream_callback(tail, false);
+                                                    }
+                                                }
+                                            });
+            if (!analysis_response.empty())
+            {
+                break;
+            }
+            ERR("模型分析阶段响应为空, request_id: {}, chat_session_id: {}, 尝试次数: {}/{}",
+                context.request_id, context.chat_session_id, attempt, kMaxAnalysisAttempt);
+            // 短暂等待后重试, 避免连续请求立即命中模型端的瞬时故障
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+        if (analysis_response.empty())
+        {
+            throw ChatExcelException(ErrorCode::AI_SERVICE_INTERNAL_ERROR);
+        }
+        INFO("分析阶段完成, request_id: {}, 响应长度: {}", context.request_id, analysis_response.size());
+        // 打印 AI 分析阶段完整输出, 便于排查 SQL 提取与危险操作校验问题
+        INFO("AI 分析阶段输出, request_id: {}, 响应内容: {}", context.request_id, analysis_response);
 
-    // 提取模型分析回复中生成的会话标题, 会话首条消息时作为标题使用
-    const std::string model_title = ExtractTaggedContent(analysis_response, kTitleStartTag, kTitleEndTag);
+        // 提取模型分析回复中生成的会话标题, 会话首条消息时作为标题使用
+        const std::string model_title = ExtractTaggedContent(analysis_response, kTitleStartTag, kTitleEndTag);
 
-    // 5. 检测模型是否回复了发送邮件工具调用, 命中则执行发邮件流程并结束, 不执行 SQL
-    if (IsEmailToolCall(analysis_response))
-    {
-        INFO("检测到发送邮件工具调用, request_id: {}", context.request_id);
-        SendEmail(context, stream_callback);
-        // 邮件轮次同样清理中间消息, 仅保留用户原话与模型的邮件内容响应
+        // 检测模型是否回复了发送邮件工具调用, 命中则执行发邮件流程并结束, 不执行 SQL
+        if (IsEmailToolCall(analysis_response))
+        {
+            INFO("检测到发送邮件工具调用, request_id: {}", context.request_id);
+            SendEmail(context, stream_callback);
+            // 邮件轮次 ChatSDK 最后一条消息为模型生成的邮件内容 JSON(SendEmail 内部
+            // SendMessage 自动落库), 该 JSON 属内部产物, 直接展示给用户不友好,
+            // 将其内容更新为成功提示文本, 保证历史会话与前端即时显示一致
+            const std::shared_ptr<aichat_sdk::Session> email_session =
+                ai_chat_sdk_->GetSession(context.chat_session_id);
+            if (email_session != nullptr && !email_session->messages.empty())
+            {
+                if (!ai_chat_sdk_->UpdateMessageContent(email_session->messages.back().mid,
+                                                        kEmailSuccessMessage))
+                {
+                    ERR("更新邮件轮次最后一条消息失败, request_id: {}, mid: {}",
+                        context.request_id, email_session->messages.back().mid);
+                }
+            }
+            // 邮件轮次同样清理中间消息, 仅保留用户原话与更新后的成功提示
+            CleanupRoundIntermediateMessages(context.request_id, context.chat_session_id,
+                                             keep_message_ids, true);
+            UpdateSessionMetadata(context.request_id, session_info, context.message, model_title);
+            return;
+        }
+
+        // 从模型回复中提取 SQL 语句
+        const std::string sql = ExtractSql(analysis_response);
+        if (sql.empty())
+        {
+            ERR("从模型回复中提取 SQL 失败, request_id: {}, 响应片段: {}",
+                context.request_id, analysis_response.substr(0, 200));
+            throw ChatExcelException(ErrorCode::AI_EXTRACT_SQL_ERROR);
+        }
+        INFO("SQL 提取成功, request_id: {}, SQL 长度: {} , SQL 语句: {}", context.request_id, sql.size(), sql);
+
+        // 通过数据库子服务执行 SQL 语句
+        std::vector<std::string> columns;
+        std::vector<std::string> column_types;
+        std::vector<std::vector<std::string>> rows;
+        const std::string result_json = ExecuteSql(context, sql, columns, column_types, rows);
+
+        // 构建总结提示词并发送给模型, 生成总结内容
+        const std::string summary_prompt = BuildSummaryPrompt(context, result_json);
+        const std::string summary_response = ai_chat_sdk_->SendMessage(context.chat_session_id, summary_prompt);
+        if (summary_response.empty())
+        {
+            ERR("模型总结阶段响应为空, request_id: {}, chat_session_id: {}",
+                context.request_id, context.chat_session_id);
+            throw ChatExcelException(ErrorCode::AI_SERVICE_INTERNAL_ERROR);
+        }
+        // 打印 AI 总结阶段完整输出, 便于排查 JSON 解析问题
+        INFO("AI 总结阶段输出, request_id: {}, 响应内容: {}", context.request_id, summary_response);
+
+        // 解析总结内容 JSON, 提取总结文本与可视化图表类型, 其余字段丢弃;
+        // 获取 JSON 字段前先判断字段是否存在, 字段缺失时按解析失败处理
+        const Json::Value summary_json =
+            ParseModelJson(summary_response, ErrorCode::AI_SUMMARY_CONTENT_PARSE_ERROR);
+        if (!summary_json.isMember("summary") || !summary_json.isMember("chartType")
+            || !summary_json["summary"].isString() || !summary_json["chartType"].isString())
+        {
+            ERR("模型总结阶段响应缺少 summary 或 chartType 字段, request_id: {}", context.request_id);
+            throw ChatExcelException(ErrorCode::AI_SUMMARY_CONTENT_PARSE_ERROR);
+        }
+        const std::string summary = summary_json["summary"].asString();
+        const std::string chart_type = summary_json["chartType"].asString();
+        INFO("总结阶段完成, request_id: {}, 图表类型: {}", context.request_id, chart_type);
+
+        // 组装最终响应 JSON, 并将最终 JSON 作为一条 assistant 消息追加到 ChatSDK,
+        // 保证通过聊天会话 ID 获取历史消息时前端也能正常展示可视化图表
+        // (模型总结阶段存储的 assistant 消息不含 SQL 执行结果, 无法支撑图表展示)
+        const std::string final_response = BuildFinalResponseJson(summary, chart_type, columns, column_types, rows);
+        if (!ai_chat_sdk_->CreateMessage(context.chat_session_id, "assistant", final_response))
+        {
+            ERR("最终 JSON 写入 ChatSDK 失败, request_id: {}, chat_session_id: {}",
+                context.request_id, context.chat_session_id);
+        }
+
+        // 清理本轮对话的中间消息, 仅保留用户原话与最终 JSON
         CleanupRoundIntermediateMessages(context.request_id, context.chat_session_id,
-                                         keep_message_ids);
+                                         keep_message_ids, true);
+
+        // 将最终响应 JSON 一次性发送给前端
+        stream_callback(final_response, true);
+
+        // 更新会话元数据(消息总数, 标题, 最近一次消息时间)
         UpdateSessionMetadata(context.request_id, session_info, context.message, model_title);
-        return;
     }
-
-    // 6. 从模型回复中提取 SQL 语句
-    const std::string sql = ExtractSql(analysis_response);
-    if (sql.empty())
+    catch (...)
     {
-        ERR("从模型回复中提取 SQL 失败, request_id: {}, 响应片段: {}",
-            context.request_id, analysis_response.substr(0, 200));
-        throw ChatExcelException(ErrorCode::AI_EXTRACT_SQL_ERROR);
+        // 对话中途失败时本轮没有最终返回, 清理全部中间消息, 仅保留用户原话,
+        // 避免分析/总结提示词残留在历史消息中
+        CleanupRoundIntermediateMessages(context.request_id, context.chat_session_id,
+                                         keep_message_ids, false);
+        throw;
     }
-    INFO("SQL 提取成功, request_id: {}, SQL 长度: {} , SQL 语句: {}", context.request_id, sql.size(), sql);
-
-    // 7. 通过数据库子服务执行 SQL 语句
-    std::vector<std::string> columns;
-    std::vector<std::string> column_types;
-    std::vector<std::vector<std::string>> rows;
-    const std::string result_json = ExecuteSql(context, sql, columns, column_types, rows);
-
-    // 8. 构建总结提示词并发送给模型, 生成总结内容
-    const std::string summary_prompt = BuildSummaryPrompt(context, result_json);
-    const std::string summary_response = ai_chat_sdk_->SendMessage(context.chat_session_id, summary_prompt);
-    if (summary_response.empty())
-    {
-        ERR("模型总结阶段响应为空, request_id: {}, chat_session_id: {}",
-            context.request_id, context.chat_session_id);
-        throw ChatExcelException(ErrorCode::AI_SERVICE_INTERNAL_ERROR);
-    }
-    // 打印 AI 总结阶段完整输出, 便于排查 JSON 解析问题
-    INFO("AI 总结阶段输出, request_id: {}, 响应内容: {}", context.request_id, summary_response);
-
-    // 解析总结内容 JSON, 提取总结文本与可视化图表类型, 其余字段丢弃;
-    // 获取 JSON 字段前先判断字段是否存在, 字段缺失时按解析失败处理
-    const Json::Value summary_json =
-        ParseModelJson(summary_response, ErrorCode::AI_SUMMARY_CONTENT_PARSE_ERROR);
-    if (!summary_json.isMember("summary") || !summary_json.isMember("chartType")
-        || !summary_json["summary"].isString() || !summary_json["chartType"].isString())
-    {
-        ERR("模型总结阶段响应缺少 summary 或 chartType 字段, request_id: {}", context.request_id);
-        throw ChatExcelException(ErrorCode::AI_SUMMARY_CONTENT_PARSE_ERROR);
-    }
-    const std::string summary = summary_json["summary"].asString();
-    const std::string chart_type = summary_json["chartType"].asString();
-    INFO("总结阶段完成, request_id: {}, 图表类型: {}", context.request_id, chart_type);
-
-    // 9. 组装最终响应 JSON, 并将最终 JSON 作为一条 assistant 消息追加到 ChatSDK,
-    //    保证通过聊天会话 ID 获取历史消息时前端也能正常展示可视化图表
-    //    (模型总结阶段存储的 assistant 消息不含 SQL 执行结果, 无法支撑图表展示)
-    const std::string final_response = BuildFinalResponseJson(summary, chart_type, columns, column_types, rows);
-    if (!ai_chat_sdk_->CreateMessage(context.chat_session_id, "assistant", final_response))
-    {
-        ERR("最终 JSON 写入 ChatSDK 失败, request_id: {}, chat_session_id: {}",
-            context.request_id, context.chat_session_id);
-    }
-
-    // 10. 清理本轮对话的中间消息, 仅保留用户原话与最终 JSON
-    CleanupRoundIntermediateMessages(context.request_id, context.chat_session_id, keep_message_ids);
-
-    // 11. 将最终响应 JSON 一次性发送给前端
-    stream_callback(final_response, true);
-
-    // 12. 更新会话元数据(消息总数, 标题, 最近一次消息时间)
-    UpdateSessionMetadata(context.request_id, session_info, context.message, model_title);
 }
 
 std::vector<std::string> AIMessageHandler::GetTableNames(const SendMessageContext& context,
@@ -773,8 +859,10 @@ void AIMessageHandler::CollectTableMetadata(const SendMessageContext& context,
             throw ChatExcelException(static_cast<ErrorCode>(sample_response.error_code()));
         }
 
-        // 按分析提示词要求的格式组装元数据文本
-        table_schema += "表 `" + table_name + "` : " + struct_response.table_struct() + "\n";
+        // 按分析提示词要求的格式组装元数据文本, 表结构使用压缩后的一行式列描述,
+        // 避免逐列 JSON 冗长元数据放大模型输入拖慢推理
+        table_schema += "表 `" + table_name + "` : "
+                        + CompressTableSchema(table_name, struct_response.table_struct()) + "\n";
         if (!table_name_text.empty())
         {
             table_name_text += ", ";
@@ -972,7 +1060,8 @@ std::vector<std::string> AIMessageHandler::SnapshotMessageIds(const std::string&
 
 void AIMessageHandler::CleanupRoundIntermediateMessages(const std::string& request_id,
                                                         const std::string& chat_session_id,
-                                                        const std::vector<std::string>& keep_message_ids)
+                                                        const std::vector<std::string>& keep_message_ids,
+                                                        bool keep_last_message)
 {
     const std::shared_ptr<aichat_sdk::Session> session = ai_chat_sdk_->GetSession(chat_session_id);
     if (session == nullptr)
@@ -985,9 +1074,11 @@ void AIMessageHandler::CleanupRoundIntermediateMessages(const std::string& reque
                                                               keep_message_ids.end());
     // 拷贝消息列表后再遍历删除, 避免 RemoveMessage 更新会话缓存导致消息列表引用失效
     const std::vector<aichat_sdk::Message> messages = session->messages;
-    // 最后一条消息为本轮模型最终返回(可视化最终 JSON 或邮件内容响应), 一并保留
+    // 对话成功时最后一条消息为本轮模型最终返回(可视化最终 JSON 或邮件内容响应), 一并保留;
+    // 对话失败时没有最终返回, 全部中间消息都要删除
+    const size_t keep_last_count = keep_last_message ? 1 : 0;
     size_t removed_count = 0;
-    for (size_t i = 0; i + 1 < messages.size(); ++i)
+    for (size_t i = 0; i + keep_last_count < messages.size(); ++i)
     {
         const aichat_sdk::Message& message = messages[i];
         // 快照中的消息(含用户原话)保留, 其余为本轮中间消息, 逐条删除
