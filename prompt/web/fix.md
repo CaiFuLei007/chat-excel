@@ -27,6 +27,12 @@
 ## 7. 我的文件中预览功能
 1. 点击我的文件中的某个文件 , 要加载文件预览内容 , 不需要加载历史会话
 
+## 8. 补充前端对标签进行解析
+
+我对后端给前端反馈的数据进行了修改(你需要重新编译后端代码 , 重新启动 AI 子服务) , 后端在进行反馈的时候会携带标签内容 , 比如:简化 Feed 状态机： <TITLE_START>/<TITLE_END>、<TASKS_START>/<TASKS_END>、<ANALYSIS_START>/<ANALYSIS_END>这些标签也会进行返回 , 现在对前端代码进行修改 ,去掉这些标签 ,将这些内容都展示在 AI 回复中, 每个标签的展示格式可以参考 : C:\Users\LENOVO\Desktop\chat2data-tech\chat2Data\bin\www 中的展示方式.
+
+明白我的要求后 , 向我展示你设计的 AI 回复布局 , 当我确定之后 , 你再对前端代码进行修改
+
 ## 8. 参考文件
 
 1. chat-excel/prompt/gateway_service/api.md 中介绍了所有 API 接口文档

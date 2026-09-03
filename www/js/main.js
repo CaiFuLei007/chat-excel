@@ -55,6 +55,8 @@ I18N.register(
     'console.modFiles': '我的文件', 'console.modHistory': '历史会话', 'console.modProfile': '个人中心',
     'console.newSession': '新建会话', 'console.refresh': '刷新', 'console.inputPh': '输入你的问题，Enter 发送，Shift+Enter 换行',
     'console.filePreview': '文件预览', 'console.resultAnalysis': '结果分析', 'console.tablePreview': '表预览',
+    'console.thinking': '正在思考', 'console.thinkingDot': '…',
+    'ai.tasks': '📋 分析任务', 'ai.analysis': '💡 分析过程',
     'console.uploadTitle': '点击或拖拽上传 Excel 文件', 'console.uploadDesc': '仅支持 .xlsx 格式',
     'console.worksheet': 'WorkSheet', 'console.table': '数据表',
     'console.model': '模型', 'console.selectModel': '选择模型',
@@ -85,6 +87,7 @@ I18N.register(
 
     /* ---- 数据库 ---- */
     'db.connList': '已连接的数据库', 'db.newConn': '建立新连接', 'db.connEmpty': '暂无已建立的连接',
+    'db.connEmptyDesc': '在下方卡片填写连接信息，建立你的第一个 MySQL 连接', 'db.connEmptyAction': '前往建立连接',
     'db.host': '主机地址', 'db.hostPh': '如 127.0.0.1', 'db.port': '端口', 'db.dbName': '数据库名',
     'db.dbNamePh': '要连接的数据库', 'db.username': '用户名', 'db.usernamePh': '数据库用户名',
     'db.password': '密码', 'db.passwordPh': '数据库密码', 'db.charset': '字符集', 'db.connect': '建立连接',
@@ -99,7 +102,8 @@ I18N.register(
     'db.connected': '已连接',
 
     /* ---- 个人中心 ---- */
-    'profile.nickname': '昵称', 'profile.email': '邮箱'
+    'profile.nickname': '昵称', 'profile.email': '邮箱',
+    'profile.accountInfo': '账号信息', 'profile.loggedIn': '已登录'
   },
   {
     /* ---- Landing ---- */
@@ -149,6 +153,8 @@ I18N.register(
     'console.modFiles': 'My Files', 'console.modHistory': 'History', 'console.modProfile': 'Profile',
     'console.newSession': 'New Session', 'console.refresh': 'Refresh', 'console.inputPh': 'Type your question. Enter to send, Shift+Enter for new line',
     'console.filePreview': 'File Preview', 'console.resultAnalysis': 'Result Analysis', 'console.tablePreview': 'Table Preview',
+    'console.thinking': 'Thinking…', 'console.thinkingDot': '…',
+    'ai.tasks': '📋 Tasks', 'ai.analysis': '💡 Analysis Process',
     'console.uploadTitle': 'Click or drag to upload an Excel file', 'console.uploadDesc': '.xlsx only',
     'console.worksheet': 'WorkSheet', 'console.table': 'Table',
     'console.model': 'Model', 'console.selectModel': 'Select model',
@@ -179,6 +185,7 @@ I18N.register(
 
     /* ---- DB ---- */
     'db.connList': 'Connected Databases', 'db.newConn': 'New Connection', 'db.connEmpty': 'No connections yet',
+    'db.connEmptyDesc': 'Fill in the form below to create your first MySQL connection', 'db.connEmptyAction': 'Create connection',
     'db.host': 'Host', 'db.hostPh': 'e.g. 127.0.0.1', 'db.port': 'Port', 'db.dbName': 'Database',
     'db.dbNamePh': 'Database name', 'db.username': 'Username', 'db.usernamePh': 'DB username',
     'db.password': 'Password', 'db.passwordPh': 'DB password', 'db.charset': 'Charset', 'db.connect': 'Connect',
@@ -193,7 +200,8 @@ I18N.register(
     'db.connected': 'Connected',
 
     /* ---- Profile ---- */
-    'profile.nickname': 'Nickname', 'profile.email': 'Email'
+    'profile.nickname': 'Nickname', 'profile.email': 'Email',
+    'profile.accountInfo': 'Account Information', 'profile.loggedIn': 'Signed in'
   }
 );
 
@@ -607,8 +615,8 @@ function createChatEngine(opts) {
             } catch (e) { /* 非结果帧 */ }
           }
           if (parsed) {
-            bodyEl.innerHTML = `<div class="ai-analysis"></div>`;
-            bodyEl.querySelector('.ai-analysis').textContent = parsed.summary || '';
+            bodyEl.innerHTML = `<div class="ai-result-note"></div>`;
+            bodyEl.querySelector('.ai-result-note').textContent = tidyBody(parsed.summary || '');
           } else {
             renderAssistantHistory(bodyEl, m.content || '', opts.structured);
           }
@@ -646,29 +654,49 @@ function createChatEngine(opts) {
       this.abortController = new AbortController();
       let gotContent = false;
 
+      // “正在思考”占位：收到首个内容/结果帧后移除
+      let thinkingEl = null;
+      const removeThinking = () => {
+        if (thinkingEl) {
+          thinkingEl.remove();
+          thinkingEl = null;
+        }
+      };
+      thinkingEl = document.createElement('div');
+      thinkingEl.className = 'ai-thinking';
+      thinkingEl.innerHTML = `<span class="ai-think-text">${escapeHtml(I18N.t('console.thinking'))}</span>`;
+      bodyEl.appendChild(thinkingEl);
+      this._scrollBottom();
+
       await apiSendStreamMessage(
         Object.assign({ message }, body),
         {
           signal: this.abortController.signal,
           onText: (content) => {
             gotContent = true;
+            removeThinking();
             renderer.append(content);
             this._scrollBottom();
           },
           onFinalResult: (obj) => {
             gotContent = true;
-            opts.onFinalResult && opts.onFinalResult(obj);
-            // 气泡内给出简短指示，引导用户查看结果分析区
+            removeThinking();
+            // 回调返回 false 表示“数据操作类”结果：无需跳结果分析, 气泡内直接展示 AI 总结
+            const isAnalysis = !opts.onFinalResult || opts.onFinalResult(obj) !== false;
             const note = document.createElement('div');
-            note.className = 'ai-analysis';
-            note.style.color = 'var(--accent)';
-            note.textContent = I18N.t('console.resultAnalysis') + ' ✓';
+            note.className = 'ai-result-note';
+            if (isAnalysis) {
+              note.textContent = I18N.t('console.resultAnalysis') + ' ✓';
+            } else {
+              note.textContent = tidyBody((obj && obj.summary) || '');
+            }
             bodyEl.appendChild(note);
           },
           onError: (msg) => {
             toast(msg, 'error');
           },
           onDone: () => {
+            removeThinking();
             renderer.finish();
             if (!gotContent && !renderer.hasContent()) {
               bodyEl.innerHTML = `<div class="ai-stream-text" style="color:var(--text-sub)">…</div>`;
@@ -831,6 +859,9 @@ async function initConsolePage() {
   FilesModule.init();
   HistoryModule.init();
   ProfileModule.init();
+
+  // 部分模块在 I18N.apply() 之后注入 data-i18n 节点（如数据库页标题），此处补一次翻译
+  I18N.apply();
 }
 
 function setBtn(id, iconName, i18nKey) {
@@ -911,6 +942,17 @@ const ChatModule = {
 };
 
 /* ================= 模块 2：Excel 智能助手 ================= */
+
+/**
+ * 判定结果帧是否属于“数据操作类”（增删改/建表等写操作）。
+ * 写 SQL 执行后无查询结果集，data.columns 为 null 或空数组；查询类则 columns 为非空数组。
+ */
+function isDataModifyResult(obj) {
+  if (!obj || !obj.data) return false;
+  const cols = obj.data.columns;
+  return cols == null || (Array.isArray(cols) && cols.length === 0);
+}
+
 const ExcelModule = {
   engine: null,
   preview: null,
@@ -1067,6 +1109,11 @@ const ExcelModule = {
   },
 
   showResult(obj) {
+    // 数据操作类(如修改单元格/行列)：不进入结果分析面板，仅让聊天气泡展示总结并刷新预览
+    if (isDataModifyResult(obj)) {
+      this._refreshAfterWrite();
+      return false;
+    }
     document.getElementById('excel-result-empty').style.display = 'none';
     const content = document.getElementById('excel-result-content');
     content.style.display = '';
@@ -1075,6 +1122,19 @@ const ExcelModule = {
     // 自动切到结果分析 Tab
     const tab = document.querySelector('#excel-tabs .inner-tab[data-pane="excel-result"]');
     tab && tab.click();
+    return true;
+  },
+
+  /** 数据操作执行成功后：重新加载文件预览，让用户看到修改后的数据 */
+  _refreshAfterWrite() {
+    const run = async () => {
+      try {
+        if (this.fileId && this.preview) await this.preview.load(this.fileId, 1);
+      } catch (e) {
+        console.error('[excel] 写操作后刷新预览失败:', e);
+      }
+    };
+    run();
   },
 
   _setResultEmpty() {
@@ -1121,7 +1181,7 @@ const DatabaseModule = {
       });
     });
 
-    document.getElementById('db-conn-title').innerHTML = `${icon('link')}<span data-i18n="db.connList"></span>`;
+    document.getElementById('db-conn-title').innerHTML = `${icon('database')}<span data-i18n="db.connList"></span>`;
     document.getElementById('db-newconn-title').innerHTML = `${icon('plus')}<span data-i18n="db.newConn"></span>`;
     document.getElementById('sqlite-upload-title').innerHTML = `${icon('upload')}<span data-i18n="db.sqliteUploadTitle"></span>`;
     document.getElementById('sqlite-connect-title').innerHTML = `${icon('link')}<span data-i18n="db.sqliteConnectTitle"></span>`;
@@ -1489,6 +1549,11 @@ const DatabaseModule = {
   },
 
   showResult(obj) {
+    // 数据操作类(增删改/建表等)：不进入结果分析面板，仅让聊天气泡展示总结并刷新表数据
+    if (isDataModifyResult(obj)) {
+      this._refreshAfterWrite();
+      return false;
+    }
     document.getElementById('db-result-empty').style.display = 'none';
     document.getElementById('db-result-content').style.display = '';
     document.getElementById('db-result-summary').textContent = obj.summary || '';
@@ -1496,6 +1561,33 @@ const DatabaseModule = {
     const tab = document.querySelector('#db-inner-tabs .inner-tab[data-pane="db-result"]');
     tab && tab.click();
     this.refreshConnStatus();
+    return true;
+  },
+
+  /** 数据操作执行成功后：刷新表列表与当前表数据（表结构可能被修改） */
+  _refreshAfterWrite() {
+    const run = async () => {
+      try {
+        const result = await API.dbTables(this.conn.connectionId);
+        this.tables = result.tables || [];
+        const sel = document.getElementById('db-table-select');
+        if (!sel) return;
+        const previous = this.currentTable;
+        sel.innerHTML = this.tables
+          .map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`)
+          .join('');
+        if (previous && this.tables.indexOf(previous) >= 0) {
+          this.currentTable = previous;
+          sel.value = previous;
+        } else {
+          this.currentTable = this.tables[0] || '';
+        }
+        if (this.currentTable) await this.loadTableData(this.currentTable);
+      } catch (e) {
+        console.error('[db] 写操作后刷新表数据失败:', e);
+      }
+    };
+    run();
   },
 
   /** 历史恢复：解析 dbConnectionInfo → 重新连接 → 恢复场景 */
@@ -1534,28 +1626,43 @@ const DatabaseModule = {
 function renderDbConnList() {
   const grid = document.getElementById('db-conn-grid');
   const empty = document.getElementById('db-conn-empty');
+  const count = document.getElementById('db-conn-count');
   if (!grid) return;
   const conns = DatabaseModule._loadConns();
+  if (count) count.style.display = conns.length ? '' : 'none';
+  if (count) count.textContent = conns.length;
   if (!conns.length) {
     grid.innerHTML = '';
     empty.style.display = '';
-    empty.innerHTML = `${icon('database')}<div class="empty-desc">${escapeHtml(I18N.t('db.connEmpty'))}</div>`;
+    empty.innerHTML = `
+      <div class="icon-box">${icon('database')}</div>
+      <div class="db-empty-title">${escapeHtml(I18N.t('db.connEmpty'))}</div>
+      <div class="db-empty-desc">${escapeHtml(I18N.t('db.connEmptyDesc'))}</div>
+      <button class="btn btn-primary db-empty-cta" type="button">${escapeHtml(I18N.t('db.connEmptyAction'))}</button>`;
+    const cta = empty.querySelector('.db-empty-cta');
+    if (cta) cta.addEventListener('click', () => {
+      const form = document.getElementById('db-mysql-form');
+      if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
     return;
   }
   empty.style.display = 'none';
   grid.innerHTML = conns
     .map(
-      (c) => `<div class="card conn-card" data-connid="${escapeHtml(c.connectionId)}">
-        <div class="conn-summary">${icon('database')}<span>${escapeHtml(c.host)}:${c.port}/${escapeHtml(c.name)}</span></div>
-        <div class="conn-meta">${escapeHtml(c.username)} · ${escapeHtml(c.charset || 'utf8mb4')}</div>
-        <div class="conn-actions">
+      (c) => `<div class="db-conn" data-connid="${escapeHtml(c.connectionId)}">
+        <span class="db-conn-ic">${icon('database')}</span>
+        <div class="db-conn-bd">
+          <div class="db-conn-name"><span class="db-conn-dot"></span><span class="db-conn-host">${escapeHtml(c.host)}:${c.port}/${escapeHtml(c.name)}</span></div>
+          <div class="db-conn-meta">${escapeHtml(c.username)} · ${escapeHtml(c.charset || 'utf8mb4')}</div>
+        </div>
+        <div class="db-conn-act">
           <button class="btn btn-primary btn-sm" data-act="enter" type="button">${escapeHtml(I18N.t('common.enter'))}</button>
           <button class="btn btn-secondary btn-sm" data-act="disconnect" type="button">${escapeHtml(I18N.t('common.disconnect'))}</button>
         </div>
       </div>`
     )
     .join('');
-  grid.querySelectorAll('.conn-card').forEach((card) => {
+  grid.querySelectorAll('.db-conn').forEach((card) => {
     const connId = card.dataset.connid;
     const conn = conns.find((c) => c.connectionId === connId);
     card.querySelector('[data-act="enter"]').addEventListener('click', () => {

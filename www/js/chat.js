@@ -15,12 +15,16 @@ class StreamTagParser {
    *   onTitle(text)             标题（增量）
    *   onTask(taskText, index)   新任务条目
    *   onAnalysis(text)          分析思路（增量）
-   *   onPlain(text)             标签外普通文本（增量）
+   *   onPlain(text)             标签外 / 未知标签内 普通文本（增量）
+   *
+   * 标签统一为 <XXX_START> ... <XXX_END>（XXX 为大写下划线命名）。
+   * TITLE/TASKS/ANALYSIS 进入各自区块；其余标签只剥除标记、内容按普通文本展示。
    */
   constructor(render) {
     this.render = render;
     this.buffer = '';
-    this.state = 'scan'; // scan | title | tasks | analysis
+    this.state = 'scan'; // scan | title | tasks | analysis | other
+    this.otherTag = '';  // state=other 时记录的标签名
     this.taskCount = 0;
     this.lastTaskRaw = '';
     this._taskDone = [];
@@ -41,10 +45,19 @@ class StreamTagParser {
     this.buffer = '';
   }
 
+  /** 当前状态对应的结束标签（如 <TITLE_END>） */
+  _endTagOf() {
+    if (this.state === 'title') return '<TITLE_END>';
+    if (this.state === 'tasks') return '<TASKS_END>';
+    if (this.state === 'analysis') return '<ANALYSIS_END>';
+    if (this.state === 'other') return '<' + this.otherTag + '_END>';
+    return '';
+  }
+
   _drain() {
     for (;;) {
       if (this.state === 'scan') {
-        // 寻找下一个开始标签；保留可能是标签前缀的尾部
+        // 寻找下一个 <XXX_START>；保留可能是标签前缀的尾部
         const idx = this._findTagStart();
         if (idx === -1) {
           const safe = this._safePlainLength();
@@ -52,26 +65,30 @@ class StreamTagParser {
             this._emitPlain(this.buffer.slice(0, safe));
             this.buffer = this.buffer.slice(safe);
           }
-          return; // 等待更多数据
+          return;
         }
         if (idx > 0) {
           this._emitPlain(this.buffer.slice(0, idx));
           this.buffer = this.buffer.slice(idx);
         }
-        // 判定是哪个标签
-        if (this._tryConsume('<TITLE_START>', 'title')) continue;
-        if (this._tryConsume('<TASKS_START>', 'tasks')) continue;
-        if (this._tryConsume('<ANALYSIS_START>', 'analysis')) continue;
+        const m = /^<([A-Z][A-Z0-9_]*)_START>/.exec(this.buffer);
+        if (m) {
+          const name = m[1].toLowerCase();
+          this.buffer = this.buffer.slice(m[0].length);
+          if (name === 'title') this.state = 'title';
+          else if (name === 'tasks') { this.state = 'tasks'; this.taskCount = 0; }
+          else if (name === 'analysis') this.state = 'analysis';
+          else { this.state = 'other'; this.otherTag = m[1].toUpperCase(); }
+          continue;
+        }
         // 不完整的标签前缀，等待更多数据
         return;
       }
 
       // 处于某个标签段内：寻找对应结束标签
-      const endTag =
-        this.state === 'title' ? '<TITLE_END>' : this.state === 'tasks' ? '<TASKS_END>' : '<ANALYSIS_END>';
+      const endTag = this._endTagOf();
       const endIdx = this.buffer.indexOf(endTag);
       if (endIdx === -1) {
-        // 结束标签可能被切断：保留尾部可能是结束标签前缀的部分
         const safe = this._safeEndLength(endTag);
         if (safe > 0) {
           this._emit(this.buffer.slice(0, safe));
@@ -82,28 +99,23 @@ class StreamTagParser {
       this._emit(this.buffer.slice(0, endIdx));
       this.buffer = this.buffer.slice(endIdx + endTag.length);
       this.state = 'scan';
+      this.otherTag = '';
     }
   }
 
+  /** 找到下一个 <XXX_START> 位置（任意大写标签） */
   _findTagStart() {
-    const tags = ['<TITLE_START>', '<TASKS_START>', '<ANALYSIS_START>'];
-    let best = -1;
-    tags.forEach((t) => {
-      const i = this.buffer.indexOf(t);
-      if (i !== -1 && (best === -1 || i < best)) best = i;
-    });
-    return best;
+    const m = /<[A-Z][A-Z0-9_]*_START>/.exec(this.buffer);
+    return m ? m.index : -1;
   }
 
-  /** 普通文本安全输出长度：尾部若以 '<' 开头的潜在标签前缀则保留 */
+  /** 普通文本安全输出长度：尾部若是未闭合的潜在标签前缀则保留 */
   _safePlainLength() {
     const lt = this.buffer.lastIndexOf('<');
     if (lt === -1) return this.buffer.length;
     const tail = this.buffer.slice(lt);
-    const candidates = ['<TITLE_START>', '<TASKS_START>', '<ANALYSIS_START>', '<TITLE_END>', '<TASKS_END>', '<ANALYSIS_END>'];
-    for (const c of candidates) {
-      if (c.startsWith(tail)) return lt; // 尾部是某标签前缀，保留
-    }
+    // 形如 <TITLE_... 尚未收到 '>'，可能是标签前缀（含普通文本中出现的小于号则无碍地等到后续判断）
+    if (/^<[A-Z][A-Z0-9_]*/.test(tail) && tail.indexOf('>') === -1) return lt;
     return this.buffer.length;
   }
 
@@ -115,16 +127,6 @@ class StreamTagParser {
     return this.buffer.length;
   }
 
-  _tryConsume(openTag, nextState) {
-    if (this.buffer.startsWith(openTag)) {
-      this.buffer = this.buffer.slice(openTag.length);
-      this.state = nextState;
-      if (nextState === 'tasks') this.taskCount = 0;
-      return true;
-    }
-    return false;
-  }
-
   _emit(text) {
     if (!text) return;
     if (this.state === 'title') {
@@ -133,6 +135,9 @@ class StreamTagParser {
       this.render.onAnalysis && this.render.onAnalysis(text);
     } else if (this.state === 'tasks') {
       this._emitTasks(text);
+    } else if (this.state === 'other') {
+      // 未知标签：剥除标记，内容按普通文本展示
+      this.render.onPlain && this.render.onPlain(text);
     }
   }
 
@@ -156,7 +161,6 @@ class StreamTagParser {
       lastIdx = re.lastIndex;
       lastNum = m[1];
     }
-    // 已完整出现下一条分隔符的任务才算完成；最后一段留在缓冲
     segments.forEach((seg) => {
       const key = `${seg.num}:${seg.text.trim()}`;
       if (!this._taskDone.includes(key)) {
@@ -170,7 +174,34 @@ class StreamTagParser {
 
 /* ============================ 聊天消息 DOM 构建 ============================ */
 
-/** 创建一条消息骨架，返回 { root, bodyEl } */
+/** 单行整理：把任意连续空白/换行折叠为单个空格并去除首尾空白 */
+function tidySingle(s) {
+  return (s || '').replace(/\s+/g, ' ').trim();
+}
+
+/** 多行正文整理：去除空行，去掉每行首尾空白，保留单个换行分段 */
+function tidyBody(s) {
+  return (s || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l !== '')
+    .join('\n');
+}
+
+/** 增量片段整理：压缩片段内的连续换行，便于流式期间避免出现空行闪烁 */
+function tidyChunk(s) {
+  return (s || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n{2,}/g, '\n')
+    .split('\n')
+    .map((l) => l.trimRight())
+    .join('\n');
+}
+
+/**
+ * 创建一条消息骨架，返回 { root, bodyEl }
+ */
 function buildMessageEl(role) {
   const root = document.createElement('div');
   root.className = `msg ${role === 'user' ? 'user-msg' : 'ai-msg'}`;
@@ -208,6 +239,10 @@ function createAiStreamRenderer(bubble, structured) {
 
   // 纯文本容器（标签外文本 / plain 模式共用）
   let plainEl = null;
+  // plain 模式累计的原始 Markdown（含换行与标记）。
+  // 渲染一律基于本变量：若从已渲染 HTML 的 textContent 回读，
+  // 换行(<br>/块级标签)与 ** 等标记都会丢失，导致格式被逐步破坏。
+  let plainBuf = '';
   const getPlainEl = () => {
     if (!plainEl) {
       plainEl = document.createElement('div');
@@ -218,35 +253,97 @@ function createAiStreamRenderer(bubble, structured) {
     return plainEl;
   };
 
-  let titleEl = null;
-  let tasksEl = null;
-  let analysisEl = null;
-  let titleText = '';
-  let analysisText = '';
+  // ---- 结构化区块（TITLE / TASKS / ANALYSIS）----
+  let titleCard = null;
+  let titleBody = null;
+  let titleBuf = '';
+  let tasksCard = null;
+  let tasksBody = null;
+  let analysisCard = null;
+  let analysisBody = null;
+
+  // 标题：渐变卡（一次创建结构，增量更新文字）
+  const ensureTitle = () => {
+    if (!titleCard) {
+      titleCard = ensureContainer('ai-title-card');
+      titleCard.innerHTML = '<span class="ai-title-ic">📊</span><span class="ai-title-body"></span>';
+      titleBody = titleCard.querySelector('.ai-title-body');
+    }
+    return titleBody;
+  };
+  // 任务：浅底卡 + 状态方框列表
+  const ensureTasks = () => {
+    if (!tasksCard) {
+      tasksCard = ensureContainer('ai-tasks-card');
+      tasksCard.innerHTML = '<div class="ai-card-label ai-label-tasks"></div><div class="ai-task-list"></div>';
+      const label = tasksCard.querySelector('.ai-label-tasks');
+      label.textContent = I18N.t('ai.tasks');
+      tasksBody = tasksCard.querySelector('.ai-task-list');
+    }
+    return tasksBody;
+  };
+  // 分析：浅底卡
+  const ensureAnalysis = () => {
+    if (!analysisCard) {
+      analysisCard = ensureContainer('ai-analysis-card');
+      analysisCard.innerHTML = '<div class="ai-card-label ai-label-analysis"></div><div class="ai-analysis-body"></div>';
+      const label = analysisCard.querySelector('.ai-label-analysis');
+      label.textContent = I18N.t('ai.analysis');
+      analysisBody = analysisCard.querySelector('.ai-analysis-body');
+    }
+    return analysisBody;
+  };
+
+  /** 递归清掉残留在气泡中的 <XXX_START>/<XXX_END> 标记文本（防御性兜底） */
+  const stripResidualTags = (node) => {
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    while (walker.nextNode()) textNodes.push(walker.currentNode);
+    textNodes.forEach((tn) => {
+      if (/<[A-Z][A-Z0-9_]*_(START|END)>/.test(tn.nodeValue)) {
+        tn.nodeValue = tn.nodeValue.replace(/<[A-Z][A-Z0-9_]*_(START|END)>/g, '');
+      }
+    });
+  };
 
   const parser = structured
     ? new StreamTagParser({
         onTitle(t) {
-          titleEl = ensureContainer('ai-title');
-          titleText += t;
-          titleEl.textContent = titleText;
+          const body = ensureTitle();
+          titleBuf += t;
+          body.textContent = titleBuf;
         },
         onTask(text) {
-          tasksEl = ensureContainer('ai-tasks');
+          const list = ensureTasks();
           const item = document.createElement('div');
           item.className = 'ai-task';
-          item.innerHTML = `${icon('check')}<span></span>`;
-          item.querySelector('span').textContent = text;
-          tasksEl.appendChild(item);
+          item.innerHTML = '<span class="ai-task-box"></span><span class="ai-task-text"></span>';
+          item.querySelector('.ai-task-text').textContent = tidySingle(text);
+          list.appendChild(item);
         },
         onAnalysis(t) {
-          analysisEl = ensureContainer('ai-analysis');
-          analysisText += t;
-          analysisEl.textContent = analysisText;
+          const body = ensureAnalysis();
+          let c = tidyChunk(t);
+          const cur = body.textContent;
+          if (cur === '') {
+            // 首个片段：剥离前导空白，避免标题下方流式期间出现空行
+            c = c.replace(/^\s+/, '');
+          } else if (cur.endsWith('\n')) {
+            c = c.replace(/^\n+/, '');
+          }
+          body.textContent = cur + c;
         },
         onPlain(t) {
           const el = getPlainEl();
-          el.textContent += t;
+          let c = tidyChunk(t);
+          const cur = el.textContent;
+          if (cur === '') {
+            // 首个片段：剥离前导空白
+            c = c.replace(/^\s+/, '');
+          } else if (cur.endsWith('\n')) {
+            c = c.replace(/^\n+/, '');
+          }
+          el.textContent = cur + c;
         }
       })
     : null;
@@ -254,16 +351,30 @@ function createAiStreamRenderer(bubble, structured) {
   return {
     /** 追加流式片段 */
     append(chunk) {
-      if (structured) parser.feed(chunk);
-      else getPlainEl().textContent += chunk;
+      if (structured) {
+        parser.feed(chunk);
+      } else {
+        // plain 模式：累计原始 Markdown 后整体渲染，
+        // 不从 DOM 回读，避免换行与 markdown 标记在增量渲染中丢失
+        plainBuf += chunk;
+        getPlainEl().innerHTML = mdRender(plainBuf);
+      }
     },
     /** 流结束 */
     finish() {
-      if (structured) parser.flush();
-      // plain 模式结束后做轻量 Markdown 渲染
+      if (structured) {
+        parser.flush();
+        // 本回合回复完成：所有任务标记为已完成（方框变 √）
+        if (tasksCard) tasksCard.classList.add('done');
+        // 最终整理：去除空行 / 多余换行 / 行首尾空白，标签残渣清理
+        if (titleBody) titleBody.textContent = tidySingle(titleBody.textContent);
+        if (analysisBody) analysisBody.textContent = tidyBody(analysisBody.textContent);
+        if (plainEl) plainEl.textContent = tidyBody(plainEl.textContent);
+        stripResidualTags(bubble);
+      }
+      // plain 模式：基于累计的原始 Markdown 做最终渲染（与流式中一致，保留换行与格式）
       if (!structured && plainEl) {
-        const raw = plainEl.textContent;
-        plainEl.innerHTML = mdRender(raw);
+        plainEl.innerHTML = mdRender(plainBuf);
       }
     },
     /** 是否渲染过任何内容 */

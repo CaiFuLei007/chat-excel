@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=20260903f">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2'%3E%3Cpath d='M4 4h16v12H4z'/%3E%3Cpath d='M4 9h16M9 4v12'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -144,51 +144,66 @@
 
             <!-- MySQL Tab -->
             <div id="db-pane-mysql">
-              <div class="db-section-title" id="db-conn-title"></div>
-              <div class="conn-grid" id="db-conn-grid"></div>
-              <div class="empty-state" id="db-conn-empty" style="padding:26px;"></div>
+              <!-- 卡片①：已建立的连接 -->
+              <div class="db-card">
+                <div class="db-card-head">
+                  <span class="db-card-title" id="db-conn-title"></span>
+                  <span class="db-card-cnt" id="db-conn-count" style="display:none"></span>
+                  <span class="db-card-rule"></span>
+                </div>
+                <div class="conn-grid" id="db-conn-grid"></div>
+                <div class="db-empty" id="db-conn-empty" style="display:none"></div>
+              </div>
 
-              <div class="db-section-title" id="db-newconn-title"></div>
-              <form class="db-form card" id="db-mysql-form" style="padding:24px;" novalidate>
-                <div class="form-row">
-                  <div class="form-group" data-field="host">
-                    <label class="form-label" data-i18n="db.host"></label>
-                    <input class="input" name="host" type="text" value="127.0.0.1" data-i18n-ph="db.hostPh">
+              <!-- 卡片②：建立新连接 -->
+              <div class="db-card">
+                <div class="db-card-head">
+                  <span class="db-card-title" id="db-newconn-title"></span>
+                  <span class="db-card-rule"></span>
+                </div>
+                <form class="db-form" id="db-mysql-form" novalidate>
+                  <div class="form-row">
+                    <div class="form-group" data-field="host">
+                      <label class="form-label" data-i18n="db.host"></label>
+                      <input class="input" name="host" type="text" value="127.0.0.1" data-i18n-ph="db.hostPh">
+                      <div class="error-msg"></div>
+                    </div>
+                    <div class="form-group" data-field="port">
+                      <label class="form-label" data-i18n="db.port"></label>
+                      <input class="input" name="port" type="number" value="3306" min="1" max="65535">
+                      <div class="error-msg"></div>
+                    </div>
+                  </div>
+                  <div class="form-group" data-field="name">
+                    <label class="form-label" data-i18n="db.dbName"></label>
+                    <input class="input" name="name" type="text" data-i18n-ph="db.dbNamePh">
                     <div class="error-msg"></div>
                   </div>
-                  <div class="form-group" data-field="port">
-                    <label class="form-label" data-i18n="db.port"></label>
-                    <input class="input" name="port" type="number" value="3306" min="1" max="65535">
-                    <div class="error-msg"></div>
+                  <div class="form-row">
+                    <div class="form-group" data-field="username">
+                      <label class="form-label" data-i18n="db.username"></label>
+                      <input class="input" name="username" type="text" data-i18n-ph="db.usernamePh">
+                      <div class="error-msg"></div>
+                    </div>
+                    <div class="form-group" data-field="password">
+                      <label class="form-label" data-i18n="db.password"></label>
+                      <input class="input" name="password" type="password" data-i18n-ph="db.passwordPh">
+                      <div class="error-msg"></div>
+                    </div>
                   </div>
-                </div>
-                <div class="form-group" data-field="name">
-                  <label class="form-label" data-i18n="db.dbName"></label>
-                  <input class="input" name="name" type="text" data-i18n-ph="db.dbNamePh">
-                  <div class="error-msg"></div>
-                </div>
-                <div class="form-row">
-                  <div class="form-group" data-field="username">
-                    <label class="form-label" data-i18n="db.username"></label>
-                    <input class="input" name="username" type="text" data-i18n-ph="db.usernamePh">
-                    <div class="error-msg"></div>
+                  <div class="form-group" data-field="charset">
+                    <label class="form-label" data-i18n="db.charset"></label>
+                    <select class="input" name="charset">
+                      <option value="utf8mb4">utf8mb4</option>
+                      <option value="utf8">utf8</option>
+                      <option value="latin1">latin1</option>
+                    </select>
                   </div>
-                  <div class="form-group" data-field="password">
-                    <label class="form-label" data-i18n="db.password"></label>
-                    <input class="input" name="password" type="password" data-i18n-ph="db.passwordPh">
-                    <div class="error-msg"></div>
+                  <div class="db-form-foot">
+                    <button class="btn btn-primary" type="submit" data-i18n="db.connect"></button>
                   </div>
-                </div>
-                <div class="form-group">
-                  <label class="form-label" data-i18n="db.charset"></label>
-                  <select class="input" name="charset">
-                    <option value="utf8mb4">utf8mb4</option>
-                    <option value="utf8">utf8</option>
-                    <option value="latin1">latin1</option>
-                  </select>
-                </div>
-                <button class="btn btn-primary" type="submit" data-i18n="db.connect"></button>
-              </form>
+                </form>
+              </div>
             </div>
 
             <!-- SQLite Tab -->
@@ -283,18 +298,26 @@
             <h2 data-i18n="console.modProfile"></h2>
           </div>
           <div class="profile-wrap">
-            <div class="card profile-card">
-              <div class="profile-avatar" id="profile-avatar"></div>
-              <div class="profile-name" id="profile-name">…</div>
-              <div class="profile-row">
-                <span class="pr-label" data-i18n="profile.nickname"></span>
-                <span id="profile-nickname">-</span>
+            <div class="profile-layout">
+              <div class="card profile-side">
+                <div class="profile-avatar" id="profile-avatar"></div>
+                <div class="profile-name" id="profile-name">…</div>
+                <span class="profile-chip" id="profile-chip" data-i18n="profile.loggedIn"></span>
               </div>
-              <div class="profile-row">
-                <span class="pr-label" data-i18n="profile.email"></span>
-                <span id="profile-email">-</span>
+              <div class="card profile-main">
+                <div class="profile-main-title" id="profile-info-title" data-i18n="profile.accountInfo"></div>
+                <div class="profile-row">
+                  <span class="pr-label" data-i18n="profile.nickname"></span>
+                  <span id="profile-nickname">-</span>
+                </div>
+                <div class="profile-row">
+                  <span class="pr-label" data-i18n="profile.email"></span>
+                  <span id="profile-email">-</span>
+                </div>
+                <div class="profile-actions">
+                  <button class="btn btn-danger profile-logout" id="profile-logout" type="button"></button>
+                </div>
               </div>
-              <button class="btn btn-danger profile-logout" id="profile-logout" type="button"></button>
             </div>
           </div>
         </section>
@@ -305,10 +328,10 @@
 
   <script src="js/config.js"></script>
   <script src="js/utils.js"></script>
-  <script src="js/api.js"></script>
+  <script src="js/api.js?v=20260903i"></script>
   <script src="js/chart.js"></script>
-  <script src="js/chat.js"></script>
+  <script src="js/chat.js?v=20260903g"></script>
   <script src="js/file.js"></script>
-  <script src="js/main.js"></script>
+  <script src="js/main.js?v=20260903f"></script>
 </body>
 </html>

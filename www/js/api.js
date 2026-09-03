@@ -246,38 +246,54 @@ async function apiSendStreamMessage(body, handlers) {
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
 
+  // 本轮流式统计与完整内容累计
+  let accText = '';
+  let accFrames = 0;
+  let accFinal = null;
+
   const processLine = (line) => {
     line = line.trim();
     if (!line.startsWith('data:')) return;
     const raw = line.slice(5).trim();
     if (!raw) return;
-    if (raw === '[DONE]') return; // 结束标记，done 帧已先行到达
+    if (raw === '[DONE]') {
+      console.log('[sse-raw]', '[DONE]'); // 流结束标记
+      return;
+    }
     let frame;
     try {
       frame = JSON.parse(raw);
     } catch (e) {
-      return; // 非 JSON 帧忽略
+      console.log('[sse-raw]', raw.slice(0, 500)); // 非 JSON 内容原样输出（限长）
+      return;
     }
+    console.log('[sse-frame]', frame); // 网关返回的帧（含 errorCode/errorMsg/done/content 等）
     if (frame.errorCode && frame.errorCode !== 0) {
+      console.log('[sse-frame] 业务错误 errorCode =', frame.errorCode, frame.errorMsg);
       handlers.onError(frame.errorMsg || I18N.t('common.serviceUnavailable'));
       return;
     }
     const content = frame.content;
     if (typeof content !== 'string' || content === '') {
+      console.log('[sse-frame] content 为空 / done =', frame.done);
       if (frame.done) handlers.onDone && handlers.onDone();
       return;
     }
+    console.log('[sse-content]', content.length > 600 ? content.slice(0, 600) + '…(截断)' : content);
     // 尝试判定最终结果帧：JSON 且含 summary + displayType
     const trimmed = content.trim();
     if (trimmed.startsWith('{')) {
       try {
         const obj = JSON.parse(trimmed);
         if (obj && typeof obj === 'object' && 'summary' in obj && 'displayType' in obj) {
+          accFinal = obj; // 记录最终结果帧（summary/displayType/data）
           handlers.onFinalResult(obj);
           return;
         }
       } catch (e) { /* 非 JSON，按普通文本处理 */ }
     }
+    accText += content; // 累计普通文本片段
+    accFrames += 1;
     handlers.onText(content);
     if (frame.done) handlers.onDone && handlers.onDone();
   };
@@ -299,6 +315,16 @@ async function apiSendStreamMessage(body, handlers) {
   } catch (e) {
     if (e.name !== 'AbortError') handlers.onError(I18N.t('common.networkError'));
   } finally {
+    // 汇总本轮流式响应：帧数 / 文本总长 / 完整文本 / 最终结果帧
+    console.log(`[sse-summary] 普通文本帧=${accFrames} 完整文本总长=${accText.length}${accFinal ? ` 最终结果帧=${accFinal.summary ? accFinal.summary.length : 0}` : ''}`);
+    if (accText) {
+      console.log('[sse-full-text] 完整响应全文：');
+      console.log(accText);
+    }
+    if (accFinal) {
+      console.log('[sse-full-final] 最终结果帧（完整 JSON）：');
+      console.log(JSON.stringify(accFinal));
+    }
     handlers.onDone && handlers.onDone();
   }
 }
