@@ -16,10 +16,13 @@ option(chat_excel_ENABLE_TESTING "构建并注册单元测试, 测试产物输�
 
 # 全局输出目录 :
 #   编译产生的临时文件保留在 build 目录(build 目录作为 cmake 构建目录),
-#   可执行文件统一输出到项目根目录 bin/ 下,
-#   静态库统一输出到项目根目录 bin/lib/ 下
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin/lib)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
+#   可执行文件统一输出到 build/bin/ 下,
+#   静态库统一输出到 build/bin/lib/ 下,
+#   运行时依赖的动态库(.so)也收集到 build/bin/lib/ 下,
+#   测试产物输出到 build/bin/test/ 下,
+#   便于 Docker 镜像构建时从 build 目录整体取用(可执行文件 + prompt_template + 动态库聚合)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/lib)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # =================================================================
 #                       公共模块静态库
@@ -108,8 +111,8 @@ add_subdirectory(svc_ai_service)
 # 单元测试默认不参与构建, 需显式指定 -DCHAT_EXCEL_ENABLE_TESTING=ON 开启
 if(chat_excel_ENABLE_TESTING)
 
-    # 测试可执行文件统一输出到 bin/test/ 目录(与可执行程序 bin/ 区分)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin/test)
+    # 测试可执行文件统一输出到 build/bin/test/ 目录(与可执行程序 build/bin/ 区分)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/test)
 
     # 查找 gtest 测试框架
     find_package(GTest REQUIRED)
@@ -170,3 +173,50 @@ if(chat_excel_ENABLE_TESTING)
     add_subdirectory(test/svc_ai_service/prompt_template)
 
 endif()
+
+# =================================================================
+#       运行时动态库收集(供 Docker 镜像构建聚合取用)
+# =================================================================
+
+# 将所有子服务可执行文件运行期依赖的动态库(.so)拷贝到 build/bin/lib/,
+# 与静态库(build/bin/lib)/可执行文件(build/bin)/提示词模板(build/bin/prompt_template)
+# 在 build/bin 下聚合, Docker 镜像构建时从 build 目录整体取用, 无需额外脚本。
+# 基础系统库由基础镜像(ubuntu:24.04)提供, 无需打入。
+
+# 参与收集的可执行文件目标名(其产物位于 build/bin/, 由 ldd 探测运行时依赖)
+set(CHAT_EXCEL_RUNTIME_TARGETS
+    user_service notify_service gateway_service excel_parse_service
+    file_service database_service ai_service
+)
+
+# 运行时动态库收集: 将收集脚本生成到 build 目录(构建产物, 不占用源码, 不新增源码脚本文件)。
+# 在全部可执行文件链接完成后, 将各服务运行期依赖的 .so 拷贝到 build/bin/lib,
+# 与可执行文件(build/bin)/prompt_template(build/bin/prompt_template)/静态库聚合, 供 Docker 从 build 取用。
+file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/collect_runtime_libs.sh CONTENT [=[
+#!/usr/bin/env bash
+# 收集 chat-excel 各子服务运行期依赖的动态库到 build/bin/lib
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="${SCRIPT_DIR}"
+OUTPUT_DIR="${ROOT_DIR}/bin/lib"
+mkdir -p "${OUTPUT_DIR}"
+BINARIES=(user_service notify_service gateway_service excel_parse_service file_service database_service ai_service)
+for binary in "${BINARIES[@]}"; do
+    ldd "${ROOT_DIR}/bin/${binary}" 2>/dev/null || true
+done | grep -oE '/[^[:space:]]+\.so[^[:space:]]*' \
+     | grep -vE '^/(lib(64|/x86_64-linux-gnu)?/(libc\.|ld-linux|libstdc\+\+|libgcc_s|libm\.|libpthread|libdl\.)|linux-vdso|libcrypt\.1)' \
+     | grep -vE '^/home/' \
+     | sort -u \
+     | while IFS= read -r dependency_path; do
+         [ -f "${dependency_path}" ] || continue
+         cp -aLf "${dependency_path}" "${OUTPUT_DIR}/"
+     done
+]=])
+add_custom_target(chat_excel_collect_runtime_libs ALL
+    COMMAND bash ${CMAKE_BINARY_DIR}/collect_runtime_libs.sh
+    COMMENT "收集运行时动态库到 ${CMAKE_BINARY_DIR}/bin/lib"
+)
+
+# 确保收集动作在全部可执行文件链接完成之后执行
+foreach(runtime_target IN LISTS CHAT_EXCEL_RUNTIME_TARGETS)
+    add_dependencies(chat_excel_collect_runtime_libs ${runtime_target})
+endforeach()

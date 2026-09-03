@@ -2,6 +2,7 @@
 .vscode/
 build/
 .clangd
+.env
 
 .cache/
 compile_commands.json
