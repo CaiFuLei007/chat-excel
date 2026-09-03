@@ -22,10 +22,13 @@ enum class SqlScanState
 
 // 危险关键字列表(统一为大写), 以完整词形式命中任意一个即判定包含危险操作,
 // 词边界校验确保命中的是关键字本身, 而不是包含关键字字样的表名/字段名
-// 注意: 不收录 "UNION ALL SELECT" 等合法只读语法, UNION ALL 后必然跟随 SELECT,
-// 收录会导致所有正常的 UNION ALL 合并查询被误判为危险操作
+// 注意:
+// 1. 不收录 "UNION ALL SELECT" 等合法只读语法, UNION ALL 后必然跟随 SELECT,
+//    收录会导致所有正常的 UNION ALL 合并查询被误判为危险操作
+// 2. 不收录 "DELETE FROM" 等修改类语法, 修改类语句由业务层在临时表上执行保护原表,
+//    收录会导致修改通路在临时表流程开始前就被拦截, DELETE 永远无法执行
 const std::vector<std::string> kDangerousKeywords = {
-    "DROP DATABASE", "DROP TABLE", "TRUNCATE", "DELETE FROM",
+    "DROP DATABASE", "DROP TABLE", "TRUNCATE",
     "EXEC", "EXECUTE", "SCRIPT", "JAVASCRIPT", "EVAL",
     "1=1", "OR 1=1", "OR '1'='1'",
     "SLEEP(", "BENCHMARK(", "LOAD_FILE(", "INTO OUTFILE", "INTO DUMPFILE",

@@ -183,7 +183,6 @@ TEST(ContainsDangerousOperationTest, ReturnTrueForDangerousKeyword)
     EXPECT_TRUE(SQLValidator::ContainsDangerousOperation("DROP DATABASE shop"));
     EXPECT_TRUE(SQLValidator::ContainsDangerousOperation("drop table users"));
     EXPECT_TRUE(SQLValidator::ContainsDangerousOperation("TRUNCATE TABLE logs"));
-    EXPECT_TRUE(SQLValidator::ContainsDangerousOperation("DELETE FROM logs"));
     EXPECT_TRUE(SQLValidator::ContainsDangerousOperation("EXEC sp_help"));
     EXPECT_TRUE(SQLValidator::ContainsDangerousOperation("SELECT * FROM users WHERE id = 1 OR 1=1"));
     EXPECT_TRUE(SQLValidator::ContainsDangerousOperation("SELECT SLEEP(10)"));
@@ -210,6 +209,8 @@ TEST(ContainsDangerousOperationTest, ReturnFalseForSafeStatement)
 {
     EXPECT_FALSE(SQLValidator::ContainsDangerousOperation("SELECT name, age FROM users WHERE id = 42"));
     EXPECT_FALSE(SQLValidator::ContainsDangerousOperation("INSERT INTO students (name) VALUES ('小明')"));
+    // DELETE 是修改类语句, 由业务层在临时表上执行保护原表, 不判定为危险操作
+    EXPECT_FALSE(SQLValidator::ContainsDangerousOperation("DELETE FROM logs WHERE id = 1"));
     EXPECT_FALSE(SQLValidator::ContainsDangerousOperation("SHOW TABLES"));
     EXPECT_FALSE(SQLValidator::ContainsDangerousOperation(""));
 }
@@ -354,6 +355,7 @@ TEST(IsValidSqlTest, ReturnTrueForValidStatement)
     EXPECT_TRUE(SQLValidator::IsValidSql("SELECT * FROM users WHERE id = 1"));
     EXPECT_TRUE(SQLValidator::IsValidSql("select 1"));
     EXPECT_TRUE(SQLValidator::IsValidSql("INSERT INTO users (name) VALUES ('tom')"));
+    EXPECT_TRUE(SQLValidator::IsValidSql("DELETE FROM logs WHERE id = 1"));
     EXPECT_TRUE(SQLValidator::IsValidSql(
         "SELECT name FROM students_a UNION ALL SELECT name FROM students_b"));
     EXPECT_TRUE(SQLValidator::IsValidSql("SHOW TABLES"));
@@ -366,7 +368,6 @@ TEST(IsValidSqlTest, ReturnFalseForInvalidStatement)
 {
     EXPECT_FALSE(SQLValidator::IsValidSql("DROP TABLE users"));
     EXPECT_FALSE(SQLValidator::IsValidSql("TRUNCATE TABLE logs"));
-    EXPECT_FALSE(SQLValidator::IsValidSql("DELETE FROM logs WHERE id = 1"));
     EXPECT_FALSE(SQLValidator::IsValidSql("UPDATE users SET name = 'a' WHERE 1=1"));
     EXPECT_FALSE(SQLValidator::IsValidSql("SELECT 1; SELECT 2"));
     EXPECT_FALSE(SQLValidator::IsValidSql("GRANT ALL ON *.* TO 'guest'"));
