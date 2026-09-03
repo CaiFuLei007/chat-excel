@@ -179,6 +179,31 @@ function isSqliteFile(name) {
   return CONFIG.SQLITE_EXTS.includes(fileExt(name));
 }
 
+/** 判定列类型是否为布尔类型(兼容 BOOLEAN / tinyint(1)) */
+function isBoolColumnType(type) {
+  const t = String(type || '').toLowerCase();
+  return t === 'boolean' || t === 'bool' || t === 'tinyint(1)';
+}
+
+/**
+ * 按数据类型格式化单元格展示值
+ * - NULL 值不展示(返回空字符串)
+ * - 布尔列展示为 true / false
+ * @param {string} cell 单元格原始值
+ * @param {string} type 列类型
+ * @returns {string} 展示值
+ */
+function formatCellByType(cell, type) {
+  // NULL 值(后端统一以字符串 "NULL" 透传)不展示
+  if (cell === null || cell === undefined || cell === 'NULL') return '';
+  if (isBoolColumnType(type)) {
+    const v = String(cell).trim();
+    if (v === '1') return 'true';
+    if (v === '0') return 'false';
+  }
+  return String(cell);
+}
+
 function debounce(fn, wait) {
   let timer = null;
   return function (...args) {

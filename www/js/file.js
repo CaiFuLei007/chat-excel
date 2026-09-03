@@ -19,19 +19,29 @@ class ExcelPreview {
     this.sheets = [];
     this.activeSheet = null;
     this.page = 1;
+    // 是否强制查看原始数据(false = 预览修改后的临时表数据, true = 查看原始表数据)
+    this.forceOriginal = false;
   }
 
   clear() {
     this.fileId = null;
     this.sheets = [];
     this.activeSheet = null;
+    this.forceOriginal = false;
     this.container.innerHTML = '';
+  }
+
+  /** 切换查看原数据 / 预览修改 */
+  async toggleForceOriginal() {
+    this.forceOriginal = !this.forceOriginal;
+    this.page = 1;
+    if (this.fileId) await this.load(this.fileId, 1);
   }
 
   /** 加载文件预览 */
   async load(fileId, pageNumber) {
     this.page = pageNumber || 1;
-    const result = await API.filePreview(fileId, this.page, CONFIG.PAGE_SIZE);
+    const result = await API.filePreview(fileId, this.page, CONFIG.PAGE_SIZE, this.forceOriginal);
     this.fileId = result.fileId || fileId;
     this.fileName = result.fileName || '';
     const sheets = (result.excelData && result.excelData.sheets) || [];
@@ -77,6 +87,23 @@ class ExcelPreview {
       return;
     }
 
+    // 工具栏: 查看原数据 / 预览修改 切换按钮
+    const toolbar = document.createElement('div');
+    toolbar.className = 'preview-toolbar';
+    const toggleBtn = document.createElement('button');
+    toggleBtn.type = 'button';
+    toggleBtn.className = 'btn btn-secondary btn-sm';
+    toggleBtn.innerHTML = this.forceOriginal
+      ? `${icon('eye')}<span>${escapeHtml(I18N.t('file.viewModified'))}</span>`
+      : `${icon('eye')}<span>${escapeHtml(I18N.t('file.viewOriginal'))}</span>`;
+    toggleBtn.addEventListener('click', () => this.toggleForceOriginal());
+    const modeTip = document.createElement('span');
+    modeTip.className = 'preview-mode-tip';
+    modeTip.textContent = this.forceOriginal ? I18N.t('file.modeOriginal') : I18N.t('file.modeModified');
+    toolbar.appendChild(toggleBtn);
+    toolbar.appendChild(modeTip);
+    c.appendChild(toolbar);
+
     // sheet 标签页
     const tabs = document.createElement('div');
     tabs.className = 'sheet-tabs';
@@ -105,9 +132,13 @@ class ExcelPreview {
     corner.className = 'row-num';
     corner.textContent = '#';
     trh.appendChild(corner);
-    (sheet.columns || []).forEach((col) => {
+    const columnTypes = sheet.columnTypes || [];
+    (sheet.columns || []).forEach((col, ci) => {
       const th = document.createElement('th');
-      th.textContent = col;
+      const colType = columnTypes[ci] || '';
+      th.innerHTML = colType
+        ? `${escapeHtml(col)}<span class="col-type">${escapeHtml(colType)}</span>`
+        : escapeHtml(col);
       trh.appendChild(th);
     });
     thead.appendChild(trh);
@@ -121,9 +152,9 @@ class ExcelPreview {
       num.className = 'row-num';
       num.textContent = baseRow + ri + 1;
       tr.appendChild(num);
-      (row || []).forEach((cell) => {
+      (row || []).forEach((cell, ci) => {
         const td = document.createElement('td');
-        td.textContent = cell ?? '';
+        td.textContent = formatCellByType(cell, columnTypes[ci] || '');
         tr.appendChild(td);
       });
       tbody.appendChild(tr);
@@ -196,12 +227,20 @@ I18N.register(
     'file.noPreview': '暂无预览数据',
     'file.pageInfo': '第 {cur} / {total} 页 · 共 {rows} 行',
     'file.onlyXlsx': '仅支持 .xlsx 格式的 Excel 文件',
-    'file.onlySqlite': '仅支持 .db / .sqlite / .sqlite3 格式的 SQLite 文件'
+    'file.onlySqlite': '仅支持 .db / .sqlite / .sqlite3 格式的 SQLite 文件',
+    'file.viewOriginal': '查看原数据',
+    'file.viewModified': '预览修改',
+    'file.modeOriginal': '当前查看：原始数据',
+    'file.modeModified': '当前查看：修改后数据'
   },
   {
     'file.noPreview': 'No preview data',
     'file.pageInfo': 'Page {cur} / {total} · {rows} rows',
     'file.onlyXlsx': 'Only .xlsx Excel files are supported',
-    'file.onlySqlite': 'Only .db / .sqlite / .sqlite3 SQLite files are supported'
+    'file.onlySqlite': 'Only .db / .sqlite / .sqlite3 SQLite files are supported',
+    'file.viewOriginal': 'View Original',
+    'file.viewModified': 'Preview Changes',
+    'file.modeOriginal': 'Viewing: original data',
+    'file.modeModified': 'Viewing: modified data'
   }
 );

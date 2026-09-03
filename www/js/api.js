@@ -183,7 +183,7 @@ const API = {
     apiDownload(`/api/file/download?requestId=${genRequestId()}&sessionId=${encodeURIComponent(getSessionId())}&fileId=${encodeURIComponent(fileId)}`),
   fileDelete: (fileId) =>
     apiRequest(`/api/file/${encodeURIComponent(fileId)}`, {}, { method: 'DELETE', query: { requestId: genRequestId(), sessionId: getSessionId() }, sessionId: false }),
-  filePreview: (fileId, pageNumber, pageSize) => apiRequest('/api/file/preview', { fileId, pageNumber, pageSize }),
+  filePreview: (fileId, pageNumber, pageSize, forceOriginal) => apiRequest('/api/file/preview', { fileId, pageNumber, pageSize, forceOriginal }),
   fileList: () => apiRequest('/api/file/list', {}),
   fileChatMap: (fileId, chatSessionId) => apiRequest('/api/file/chat/map', { fileId, chatSessionId }),
   sqliteUpload: (filename, blob) =>

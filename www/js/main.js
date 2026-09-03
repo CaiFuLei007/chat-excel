@@ -627,8 +627,8 @@ function createChatEngine(opts) {
       }
       const message = opts.inputEl.value.trim();
       if (!message) return;
-      const body = opts.buildPayload(message);
-      if (!body) return; // 被拦截（如未建会话）
+      const body = await opts.buildPayload(message);
+      if (!body) return; // 被拦截（如缺少文件/连接）
 
       opts.inputEl.value = '';
       this._autoGrow(opts.inputEl);
@@ -818,6 +818,13 @@ async function initConsolePage() {
     mask.classList.remove('show');
   });
 
+  // 桌面端侧边栏收起 / 展开
+  const sidebarToggle = document.getElementById('sidebar-toggle');
+  sidebarToggle.innerHTML = icon('menu');
+  sidebarToggle.addEventListener('click', () => {
+    sidebar.classList.toggle('collapsed');
+  });
+
   ChatModule.init();
   ExcelModule.init();
   DatabaseModule.init();
@@ -858,10 +865,11 @@ const ChatModule = {
       sendBtn: document.getElementById('chat-send'),
       hintEl: null,
       structured: false,
-      buildPayload: (message) => {
+      buildPayload: async (message) => {
+        // 未新建会话就发送消息时, 自动新建会话
         if (!this.engine.chatSessionId) {
-          toast(I18N.t('console.needSession'), 'error');
-          return null;
+          const ok = await this.newSession(true);
+          if (!ok) return null;
         }
         return { chatSessionId: this.engine.chatSessionId, chatType: 'plain' };
       }
@@ -871,10 +879,15 @@ const ChatModule = {
     document.getElementById('chat-new-session').addEventListener('click', () => this.newSession());
   },
 
-  async newSession() {
+  /**
+   * 新建会话, 清空聊天框内容
+   * @param {boolean} silent 静默模式(自动新建时不提示)
+   * @returns {Promise<boolean>} 是否创建成功
+   */
+  async newSession(silent) {
     if (!ConsoleState.currentModel) {
       toast(I18N.t('common.serviceUnavailable'), 'error');
-      return;
+      return false;
     }
     try {
       const result = await API.aiSessionCreate({
@@ -883,8 +896,10 @@ const ChatModule = {
       });
       this.engine.setSession(result.chatSessionId);
       this.engine.clearMessages();
-      toast(I18N.t('console.sessionCreated'), 'success');
+      if (!silent) toast(I18N.t('console.sessionCreated'), 'success');
+      return true;
     } catch (e) { /* 已提示 */ }
+    return false;
   },
 
   /** 历史恢复入口 */
@@ -948,9 +963,13 @@ const ExcelModule = {
       sendBtn: document.getElementById('excel-send'),
       hintEl: document.getElementById('excel-hint'),
       structured: true,
-      buildPayload: (message) => {
+      buildPayload: async (message) => {
         if (!this.fileId) { toast(I18N.t('console.needFile'), 'error'); return null; }
-        if (!this.engine.chatSessionId) { toast(I18N.t('console.needSession'), 'error'); return null; }
+        // 未新建会话就发送消息时, 自动新建会话并关联当前文件
+        if (!this.engine.chatSessionId) {
+          const ok = await this._ensureSession();
+          if (!ok) return null;
+        }
         return { chatSessionId: this.engine.chatSessionId, chatType: 'excel', fileId: this.fileId };
       },
       onFinalResult: (obj) => this.showResult(obj)
@@ -982,11 +1001,15 @@ const ExcelModule = {
     hideLoading();
   },
 
-  /** 外部（我的文件）携 fileId 进入 */
+  /** 外部（我的文件）携 fileId 进入 : 只加载文件预览, 不加载历史会话 */
   async openFile(fileId) {
     switchModule('excel');
     showLoading(I18N.t('common.loading'));
     try {
+      // 清空会话与结果分析, 仅保留文件预览
+      this.engine.setSession('');
+      this.engine.clearMessages();
+      this._resetResult();
       this.fileId = fileId;
       await this.preview.load(fileId);
       document.getElementById('excel-upload-zone').style.display = 'none';
@@ -994,19 +1017,53 @@ const ExcelModule = {
     hideLoading();
   },
 
+  /** 新建会话 : 清空所有信息(文件预览、结果分析、聊天内容)并创建新会话 */
   async newSession() {
     if (!ConsoleState.currentModel) { toast(I18N.t('common.serviceUnavailable'), 'error'); return; }
-    if (!this.fileId) { toast(I18N.t('console.needFile'), 'error'); return; }
+    try {
+      const result = await API.aiSessionCreate({
+        modelName: ConsoleState.currentModel,
+        sessionType: 'excel'
+      });
+      this._clearAll();
+      this.engine.setSession(result.chatSessionId);
+      toast(I18N.t('console.sessionCreated'), 'success');
+    } catch (e) { /* 已提示 */ }
+  },
+
+  /** 清空所有信息 : 文件预览数据、结果分析与聊天内容 */
+  _clearAll() {
+    this.fileId = '';
+    this.preview.clear();
+    document.getElementById('excel-upload-zone').style.display = '';
+    document.getElementById('excel-sheet-select').innerHTML = '';
+    this._resetResult();
+    this.engine.setSession('');
+    this.engine.clearMessages();
+  },
+
+  /** 重置结果分析区并切回文件预览 Tab */
+  _resetResult() {
+    document.getElementById('excel-result-empty').style.display = '';
+    document.getElementById('excel-result-content').style.display = 'none';
+    document.getElementById('excel-result-summary').textContent = '';
+    document.getElementById('excel-result-chart').innerHTML = '';
+    const tab = document.querySelector('#excel-tabs .inner-tab[data-pane="excel-preview"]');
+    tab && tab.click();
+  },
+
+  /** 未建会话发送消息时自动新建会话, 并关联当前文件 */
+  async _ensureSession() {
+    if (!ConsoleState.currentModel) { toast(I18N.t('common.serviceUnavailable'), 'error'); return false; }
     try {
       const result = await API.aiSessionCreate({
         modelName: ConsoleState.currentModel,
         sessionType: 'excel'
       });
       this.engine.setSession(result.chatSessionId);
-      this.engine.clearMessages();
-      await API.fileChatMap(this.fileId, result.chatSessionId);
-      toast(I18N.t('console.sessionCreated'), 'success');
-    } catch (e) { /* 已提示 */ }
+      API.fileChatMap(this.fileId, result.chatSessionId).catch(() => {});
+      return true;
+    } catch (e) { return false; }
   },
 
   showResult(obj) {
@@ -1049,6 +1106,8 @@ const DatabaseModule = {
   currentTable: '',
   sqliteFiles: [],
   selectedSqliteFileId: '',
+  // 是否强制查看原始数据(false = 预览修改后的临时表数据, true = 查看原始表数据)
+  forceOriginal: false,
 
   init() {
     // MySQL / SQLite Tab
@@ -1133,10 +1192,14 @@ const DatabaseModule = {
       sendBtn: document.getElementById('db-send'),
       hintEl: document.getElementById('db-hint'),
       structured: true,
-      buildPayload: (message) => {
+      buildPayload: async (message) => {
         if (!this.conn) { toast(I18N.t('console.needSession'), 'error'); return null; }
-        if (!this.engine.chatSessionId) { toast(I18N.t('console.needSession'), 'error'); return null; }
         if (!this.currentTable) { toast(I18N.t('console.needTable'), 'error'); return null; }
+        // 未新建会话就发送消息时, 自动新建会话
+        if (!this.engine.chatSessionId) {
+          const ok = await this._ensureSession();
+          if (!ok) return null;
+        }
         return {
           chatSessionId: this.engine.chatSessionId,
           chatType: 'database',
@@ -1284,9 +1347,9 @@ const DatabaseModule = {
   async loadTableData(tableName) {
     const area = document.getElementById('db-table-area');
     // 调试日志: 加载表数据前打印目标表名
-    console.log('[db] loadTableData 请求表数据, tableName:', tableName);
+    console.log('[db] loadTableData 请求表数据, tableName:', tableName, 'forceOriginal:', this.forceOriginal);
     try {
-      const result = await API.dbTableData(this.conn.connectionId, tableName);
+      const result = await API.dbTableData(this.conn.connectionId, tableName, this.forceOriginal);
       // 调试日志: 表数据接口原始返回
       console.log('[db] dbTableData 返回:', result);
       const schema = result.tableSchema || {};
@@ -1296,6 +1359,27 @@ const DatabaseModule = {
       console.log('[db] 解析结果 列数:', cols.length, '行数:', rows.length, 'cols:', cols.map((c) => `${c.name}:${c.type}`).join(', '));
 
       area.innerHTML = '';
+
+      // 工具栏: 查看原数据 / 预览修改 切换按钮
+      const toolbar = document.createElement('div');
+      toolbar.className = 'preview-toolbar';
+      const toggleBtn = document.createElement('button');
+      toggleBtn.type = 'button';
+      toggleBtn.className = 'btn btn-secondary btn-sm';
+      toggleBtn.innerHTML = this.forceOriginal
+        ? `${icon('eye')}<span>${escapeHtml(I18N.t('file.viewModified'))}</span>`
+        : `${icon('eye')}<span>${escapeHtml(I18N.t('file.viewOriginal'))}</span>`;
+      toggleBtn.addEventListener('click', () => {
+        this.forceOriginal = !this.forceOriginal;
+        this.loadTableData(this.currentTable);
+      });
+      const modeTip = document.createElement('span');
+      modeTip.className = 'preview-mode-tip';
+      modeTip.textContent = this.forceOriginal ? I18N.t('file.modeOriginal') : I18N.t('file.modeModified');
+      toolbar.appendChild(toggleBtn);
+      toolbar.appendChild(modeTip);
+      area.appendChild(toolbar);
+
       const table = document.createElement('table');
       table.className = 'excel-table';
       const thead = document.createElement('thead');
@@ -1318,9 +1402,10 @@ const DatabaseModule = {
         num.className = 'row-num';
         num.textContent = ri + 1;
         tr.appendChild(num);
-        row.forEach((cell) => {
+        row.forEach((cell, ci) => {
           const td = document.createElement('td');
-          td.textContent = cell ?? '';
+          // 按数据类型展示: NULL 不展示, bool 展示 true/false
+          td.textContent = formatCellByType(cell, (cols[ci] && cols[ci].type) || '');
           tr.appendChild(td);
         });
         tbody.appendChild(tr);
@@ -1355,24 +1440,52 @@ const DatabaseModule = {
     renderDbConnList();
   },
 
+  /** 新建会话 : 清空结果分析与聊天内容并创建新会话 */
   async newSession() {
     if (!this.conn) { toast(I18N.t('console.needSession'), 'error'); return; }
     if (!ConsoleState.currentModel) { toast(I18N.t('common.serviceUnavailable'), 'error'); return; }
-    // dbConnectionInfo：前端定义结构，用于历史会话恢复
-    const info =
-      this.conn.type === 'MySQL'
-        ? { type: 'MySQL', host: this.conn.info.host, port: this.conn.info.port, name: this.conn.info.name, username: this.conn.info.username, password: this.conn.info.password, charset: this.conn.info.charset }
-        : { type: 'SQLite', fileId: this.conn.info.fileId, fileName: this.conn.info.fileName };
     try {
       const result = await API.aiSessionCreate({
         modelName: ConsoleState.currentModel,
         sessionType: 'database',
-        dbConnectionInfo: JSON.stringify(info)
+        dbConnectionInfo: JSON.stringify(this._buildConnInfo())
       });
+      this._resetResult();
       this.engine.setSession(result.chatSessionId);
       this.engine.clearMessages();
       toast(I18N.t('console.sessionCreated'), 'success');
     } catch (e) { /* 已提示 */ }
+  },
+
+  /** 构建连接信息(用于会话创建与历史恢复) */
+  _buildConnInfo() {
+    return this.conn.type === 'MySQL'
+      ? { type: 'MySQL', host: this.conn.info.host, port: this.conn.info.port, name: this.conn.info.name, username: this.conn.info.username, password: this.conn.info.password, charset: this.conn.info.charset }
+      : { type: 'SQLite', fileId: this.conn.info.fileId, fileName: this.conn.info.fileName };
+  },
+
+  /** 重置结果分析区并切回表预览 Tab */
+  _resetResult() {
+    document.getElementById('db-result-empty').style.display = '';
+    document.getElementById('db-result-content').style.display = 'none';
+    document.getElementById('db-result-summary').textContent = '';
+    document.getElementById('db-result-chart').innerHTML = '';
+    const tab = document.querySelector('#db-inner-tabs .inner-tab[data-pane="db-table"]');
+    tab && tab.click();
+  },
+
+  /** 未建会话发送消息时自动新建会话 */
+  async _ensureSession() {
+    if (!ConsoleState.currentModel) { toast(I18N.t('common.serviceUnavailable'), 'error'); return false; }
+    try {
+      const result = await API.aiSessionCreate({
+        modelName: ConsoleState.currentModel,
+        sessionType: 'database',
+        dbConnectionInfo: JSON.stringify(this._buildConnInfo())
+      });
+      this.engine.setSession(result.chatSessionId);
+      return true;
+    } catch (e) { return false; }
   },
 
   showResult(obj) {
