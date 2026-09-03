@@ -69,3 +69,16 @@
 3. 因此你需要帮助我修改AI 发送消息的 RPC 方法 , 在构建完最终 JSON 结构之后 , 你需要将最终 JSON 加入到 ChatSDK 中 , 相同聊天会话中 Message 表中的最后一条 assistant 消息为最终 JSON 结构.
 4. 要求 : 在 ChatSDK 现有代码下进行修改 , 不可以修改 ChatSDK 中的代码
 
+## 8. 对 AIMessageHandler::SendEmail 保存消息接口进行调整
+
+1. 当前我在会话列表中查看一个具体会话的时候 , 会向后端请求该会话的所有消息的请求 , 我发送一条消息会产生如下几种聊天历史消息:
+    1. 我在前端发送的消息
+    2. AI 子服务中组装 chat-excel/svc_ai_service/prompt_template/analyze_prompt.md 分析提示词交给模型的消息
+    3. 模型的返回消息
+    4. AI 子服务再组装 chat-excel/svc_ai_service/prompt_template/summary_prompt.md 总结提示词交给模型的消息
+    5. 模型返回的消息
+2. 现在要求用户对话完成之后 , 只保留 : 我在前端发送的消息 和 模型返回的消息, 将中间的消息进行删除.
+3.  AIChatSdk 增加接口:
+    1. 通用消息插入接口 CreateMessage: bool CreateMessage(const std::string& ssid, const std::string& role, const std::string& content);    
+    2. 单条消息删除接口 RemoveMessage: bool RemoveMessage(const std::string& mid) : 按消息 ID 删除指定消息, 同步更新内存会话缓存与 SQLite 数据库
+    3. 消息内容更新接口 UpdateMessageContent : 更新指定消息的内容, 同步更新内存会话缓存与 SQLite 数据库

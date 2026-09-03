@@ -82,7 +82,8 @@ public:
 private:
     /**
      * @brief 处理 Excel 与数据库聊天场景的公共流程: 收集数据库元数据, 构建分析提示词,
-     *        与模型进行两阶段交互并执行 SQL, 组织可视化 JSON 结果返回前端
+     *        与模型进行两阶段交互并执行 SQL, 组织可视化 JSON 结果返回前端;
+     *        对话完成后清理本轮中间消息, 仅保留用户原话与模型最终返回
      * @param context 发送消息上下文
      * @param stream_callback 流式输出回调
      * @param session_info 聊天会话元数据, 会话归属已校验
@@ -187,6 +188,26 @@ private:
                                const std::string& user_message, const std::string& model_title);
 
     /**
+     * @brief 获取会话当前所有消息 ID 快照, 用于一轮对话结束后识别本轮新增的中间消息
+     * @param request_id 请求 ID, 用于日志链路追踪
+     * @param chat_session_id AI 聊天会话 ID
+     * @return 消息 ID 快照列表, 会话不存在时抛出异常
+     */
+    std::vector<std::string> SnapshotMessageIds(const std::string& request_id,
+                                                const std::string& chat_session_id);
+
+    /**
+     * @brief 清理一轮对话中的中间消息, 仅保留快照中的消息(含用户原话)与会话最后一条消息
+     *        (本轮模型最终返回, 可视化最终 JSON 或邮件内容响应), 删除失败仅记录日志不抛出异常
+     * @param request_id 请求 ID, 用于日志链路追踪
+     * @param chat_session_id AI 聊天会话 ID
+     * @param keep_message_ids 对话开始前的消息 ID 快照列表(含对话开始时写入的用户原话)
+     */
+    void CleanupRoundIntermediateMessages(const std::string& request_id,
+                                          const std::string& chat_session_id,
+                                          const std::vector<std::string>& keep_message_ids);
+
+    /**
      * @brief 获取指定用户邮箱, 通过用户子服务查询用户信息并返回邮箱
      * @param context 发送消息上下文
      * @return 用户邮箱
@@ -194,9 +215,10 @@ private:
     std::string GetUserEmail(const SendMessageContext& context);
 
     /**
-     * @brief 从 ChatSDK 会话历史消息中提取上一轮对话的邮件参数, 包含上一轮用户提问,
-     *        分析消息中的标题与分析内容, 总结消息中的总结内容;
-     *        历史消息中缺少分析消息或总结消息时抛出异常
+     * @brief 从 ChatSDK 会话历史消息中提取上一轮对话的邮件参数, 上一轮用户提问与
+     *        最终 JSON 消息中的总结内容为必需参数, 分析内容为可选参数
+     *        (中间分析消息在对话完成后已被清理, 仅未清理的历史会话中存在);
+     *        历史消息中缺少上一轮用户提问或最终 JSON 消息时抛出异常
      * @param request_id 请求 ID, 用于日志链路追踪
      * @param chat_session_id AI 聊天会话 ID
      * @return 邮箱参数 JSON 字符串, 格式为 {"question", "analysis", "summary"}
