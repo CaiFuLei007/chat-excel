@@ -33,3 +33,8 @@ MySQL 配置 : 配置信息从环境变量中获取
 	3. Excel 解析类型转化为数据库列类型 , DatabaseBusiness::CreateImportTable 在创建新的表结构的时候 , 需要根据 Excel 中的列类型 , 转化为对应的数据库列类型 . 具体转化 :  将 BOOLEAN 类型转化为 INT 类型 , 数据行中对应的 BOOLEAN 类型字段需要进行转换 , 转化为 0 和 1 , DATE 类型转化为 TEXT 类型
 3. DatabaseBusiness::CreateImportTable , 插入行数据的时候 , 如果 Excel 中的列类型是 BOOLEAN 类型 , 则需要将数据行中对应的 BOOLEAN 类型字段进行转换 , 转化为 0 和 1 , DATE 类型转化为 TEXT 类型
 4. 检查 SQLite 数据库在执行修改类 SQL 语句的时候 , 是否进行了备份 , 如果没有 , 则需要添加备份逻辑
+
+
+## 3. 完善对 SQLValidator::ContainsDangerousOperation 的判断
+1. 在进行判断的时候 , 存在误判的情况, 如果输入时 SELECT description FROM products 就会命中 SCRIPT .
+2. 因此修改判断逻辑 , 在确保命中的是关键字,而不是表名称或字段名.

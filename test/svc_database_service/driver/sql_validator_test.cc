@@ -185,7 +185,6 @@ TEST(ContainsDangerousOperationTest, ReturnTrueForDangerousKeyword)
     EXPECT_TRUE(SQLValidator::ContainsDangerousOperation("TRUNCATE TABLE logs"));
     EXPECT_TRUE(SQLValidator::ContainsDangerousOperation("DELETE FROM logs"));
     EXPECT_TRUE(SQLValidator::ContainsDangerousOperation("EXEC sp_help"));
-    EXPECT_TRUE(SQLValidator::ContainsDangerousOperation("UNION ALL SELECT name FROM users"));
     EXPECT_TRUE(SQLValidator::ContainsDangerousOperation("SELECT * FROM users WHERE id = 1 OR 1=1"));
     EXPECT_TRUE(SQLValidator::ContainsDangerousOperation("SELECT SLEEP(10)"));
     EXPECT_TRUE(SQLValidator::ContainsDangerousOperation("SELECT BENCHMARK(1000000, MD5('x'))"));
@@ -213,6 +212,43 @@ TEST(ContainsDangerousOperationTest, ReturnFalseForSafeStatement)
     EXPECT_FALSE(SQLValidator::ContainsDangerousOperation("INSERT INTO students (name) VALUES ('小明')"));
     EXPECT_FALSE(SQLValidator::ContainsDangerousOperation("SHOW TABLES"));
     EXPECT_FALSE(SQLValidator::ContainsDangerousOperation(""));
+}
+
+// 正常情况: UNION ALL 是合法的只读合并查询语法, 不判定为危险操作
+// (回归用例: 模型生成的多表合并统计 SQL 曾因 "UNION ALL SELECT" 关键字被误判)
+TEST(ContainsDangerousOperationTest, ReturnFalseForUnionAllQuery)
+{
+    EXPECT_FALSE(SQLValidator::ContainsDangerousOperation(
+        "SELECT `专业`, COUNT(*) FROM t1 UNION ALL SELECT `专业`, COUNT(*) FROM t2 GROUP BY `专业`"));
+    EXPECT_FALSE(SQLValidator::ContainsDangerousOperation(
+        "-- 合并两表统计人数\nSELECT name FROM students_a UNION ALL SELECT name FROM students_b"));
+    EXPECT_FALSE(SQLValidator::ContainsDangerousOperation(
+        "SELECT id FROM users UNION ALL SELECT id FROM orders LIMIT 100;"));
+}
+
+// 正常情况: 表名/字段名中包含危险关键字字样不判定为危险操作, 完整词匹配排除误判
+// (回归用例: SELECT description FROM products 曾因 description 包含 script 字样被误判)
+TEST(ContainsDangerousOperationTest, IgnoreKeywordInsideIdentifier)
+{
+    EXPECT_FALSE(SQLValidator::ContainsDangerousOperation("SELECT description FROM products"));
+    EXPECT_FALSE(SQLValidator::ContainsDangerousOperation("SELECT `script` FROM products"));
+    EXPECT_FALSE(SQLValidator::ContainsDangerousOperation(
+        "SELECT * FROM task WHERE execute_time > '2024-01-01'"));
+    EXPECT_FALSE(SQLValidator::ContainsDangerousOperation(
+        "SELECT evaluate_score, eval_remark FROM student"));
+    EXPECT_FALSE(SQLValidator::ContainsDangerousOperation(
+        "SELECT * FROM transcript WHERE student_id = 1"));
+}
+
+// 正常情况: 字符串数据中包含危险关键字不判定为危险操作, 引号内容匹配前被遮蔽
+TEST(ContainsDangerousOperationTest, IgnoreKeywordInsideStringLiteral)
+{
+    EXPECT_FALSE(SQLValidator::ContainsDangerousOperation(
+        "SELECT * FROM logs WHERE content = 'DROP TABLE users'"));
+    EXPECT_FALSE(SQLValidator::ContainsDangerousOperation(
+        "INSERT INTO articles (title) VALUES ('如何用 JavaScript 编写脚本')"));
+    EXPECT_FALSE(SQLValidator::ContainsDangerousOperation(
+        "SELECT * FROM users WHERE name = 'exec' AND age > 18"));
 }
 
 // 正常情况: 末尾单个分号为语句结束符, 不判定为多条语句
@@ -318,6 +354,8 @@ TEST(IsValidSqlTest, ReturnTrueForValidStatement)
     EXPECT_TRUE(SQLValidator::IsValidSql("SELECT * FROM users WHERE id = 1"));
     EXPECT_TRUE(SQLValidator::IsValidSql("select 1"));
     EXPECT_TRUE(SQLValidator::IsValidSql("INSERT INTO users (name) VALUES ('tom')"));
+    EXPECT_TRUE(SQLValidator::IsValidSql(
+        "SELECT name FROM students_a UNION ALL SELECT name FROM students_b"));
     EXPECT_TRUE(SQLValidator::IsValidSql("SHOW TABLES"));
     EXPECT_TRUE(SQLValidator::IsValidSql("BEGIN"));
     EXPECT_TRUE(SQLValidator::IsValidSql("commit"));

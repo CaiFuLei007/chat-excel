@@ -56,8 +56,9 @@ public:
     static bool IsValidColumnName(const std::string& column_name);
 
     /**
-     * @brief 判断是否包含危险操作, 根据危险关键字列表进行匹配(大小写不敏感,
-     *        匹配前会移除注释并合并连续空白)
+     * @brief 判断是否包含危险操作, 以完整词形式匹配危险关键字列表(大小写不敏感,
+     *        匹配前会移除注释, 遮蔽引号内容并合并连续空白); 词边界校验确保命中的
+     *        是关键字本身, 引号内的表名/字段名/字符串数据不会误判
      * @param sql 原始 SQL 语句
      * @return 包含危险操作返回 true, 否则返回 false
      */

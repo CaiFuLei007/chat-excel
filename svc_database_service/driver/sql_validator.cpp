@@ -20,11 +20,14 @@ enum class SqlScanState
     IN_BLOCK_COMMENT,  // 多行注释内部
 };
 
-// 危险关键字列表(统一为大写), 命中任意一个即判定包含危险操作
+// 危险关键字列表(统一为大写), 以完整词形式命中任意一个即判定包含危险操作,
+// 词边界校验确保命中的是关键字本身, 而不是包含关键字字样的表名/字段名
+// 注意: 不收录 "UNION ALL SELECT" 等合法只读语法, UNION ALL 后必然跟随 SELECT,
+// 收录会导致所有正常的 UNION ALL 合并查询被误判为危险操作
 const std::vector<std::string> kDangerousKeywords = {
     "DROP DATABASE", "DROP TABLE", "TRUNCATE", "DELETE FROM",
     "EXEC", "EXECUTE", "SCRIPT", "JAVASCRIPT", "EVAL",
-    "UNION ALL SELECT", "1=1", "OR 1=1", "OR '1'='1'",
+    "1=1", "OR 1=1", "OR '1'='1'",
     "SLEEP(", "BENCHMARK(", "LOAD_FILE(", "INTO OUTFILE", "INTO DUMPFILE",
 };
 
@@ -111,6 +114,110 @@ std::string CollapseWhitespace(std::string text)
         }
     }
     return result;
+}
+
+/**
+ * @brief 遮蔽引号包裹的内容 : 单引号字符串, 双引号字符串/标识符, 反引号标识符
+ *        内部的字符替换为空格(引号本身保留以维持词法边界), 使危险关键字匹配
+ *        只作用于可执行位置, 不会命中字符串数据或表名/字段名
+ * @param sql 原始 SQL 语句
+ * @return 引号内容被遮蔽后的 SQL 语句
+ */
+std::string MaskQuotedContent(const std::string& sql)
+{
+    std::string result;
+    result.reserve(sql.size());
+
+    SqlScanState state = SqlScanState::NORMAL;
+    for (size_t i = 0; i < sql.size(); ++i)
+    {
+        char current = sql[i];
+        switch (state)
+        {
+        case SqlScanState::NORMAL:
+            result += current;
+            if (current == '\'')
+            {
+                state = SqlScanState::IN_SINGLE_QUOTE;
+            }
+            else if (current == '"')
+            {
+                state = SqlScanState::IN_DOUBLE_QUOTE;
+            }
+            else if (current == '`')
+            {
+                state = SqlScanState::IN_BACKTICK;
+            }
+            break;
+        case SqlScanState::IN_SINGLE_QUOTE:
+        case SqlScanState::IN_DOUBLE_QUOTE:
+        case SqlScanState::IN_BACKTICK:
+        {
+            // 当前引号状态对应的引号字符
+            char quote = '\'';
+            if (state == SqlScanState::IN_DOUBLE_QUOTE)
+            {
+                quote = '"';
+            }
+            else if (state == SqlScanState::IN_BACKTICK)
+            {
+                quote = '`';
+            }
+
+            if (current == '\\' && quote != '`' && i + 1 < sql.size())
+            {
+                // 反斜杠转义 : 转义符与被转义字符均视为引号内容
+                result += ' ';
+                result += ' ';
+                ++i;
+            }
+            else if (current == quote)
+            {
+                // 双写引号为引号内容内部的转义引号, 仍属于引号内容
+                if (i + 1 < sql.size() && sql[i + 1] == quote)
+                {
+                    result += ' ';
+                    result += ' ';
+                    ++i;
+                }
+                else
+                {
+                    // 引号结束, 引号本身保留
+                    result += current;
+                    state = SqlScanState::NORMAL;
+                }
+            }
+            else
+            {
+                // 引号内部内容替换为空格
+                result += ' ';
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
+    return result;
+}
+
+/**
+ * @brief 获取规范化后的危险关键字列表 : 与 SQL 语句采用相同的规范化流程
+ *        (遮蔽引号内容 + 大写化 + 合并连续空白), 保证关键字与语句文本形态一致
+ * @return 规范化后的危险关键字列表
+ */
+const std::vector<std::string>& GetNormalizedDangerousKeywords()
+{
+    static const std::vector<std::string> kNormalizedKeywords = [] {
+        std::vector<std::string> keywords;
+        keywords.reserve(kDangerousKeywords.size());
+        for (const auto& keyword : kDangerousKeywords)
+        {
+            keywords.push_back(CollapseWhitespace(ToUpperAscii(MaskQuotedContent(keyword))));
+        }
+        return keywords;
+    }();
+    return kNormalizedKeywords;
 }
 
 /**
@@ -424,13 +531,38 @@ bool SQLValidator::IsValidColumnName(const std::string& column_name)
 
 bool SQLValidator::ContainsDangerousOperation(const std::string& sql)
 {
-    // 规范化 + 大写化 + 合并连续空白后进行危险关键字匹配
-    std::string text = CollapseWhitespace(ToUpperAscii(NormalizeSql(sql)));
-    for (const auto& keyword : kDangerousKeywords)
+    // 规范化 : 移除注释 + 遮蔽引号内容 + 大写化 + 合并连续空白
+    std::string text = CollapseWhitespace(ToUpperAscii(MaskQuotedContent(NormalizeSql(sql))));
+    for (const auto& keyword : GetNormalizedDangerousKeywords())
     {
-        if (text.find(keyword) != std::string::npos)
+        // 关键字首尾字符是否为标识符字符, 决定对应一侧是否需要词边界校验
+        // (如 SLEEP( 以左括号结尾, 括号后紧跟参数是合法形态, 不做词边界校验)
+        const bool check_previous = IsIdentifierChar(static_cast<unsigned char>(keyword.front()));
+        const bool check_next = IsIdentifierChar(static_cast<unsigned char>(keyword.back()));
+
+        size_t position = text.find(keyword);
+        while (position != std::string::npos)
         {
-            return true;
+            // 完整词匹配 : 命中位置前后均不能是标识符字符, 确保命中的是关键字本身,
+            // 而不是恰好包含关键字字样的表名/字段名(如 description 命中 script)
+            bool previous_is_identifier = false;
+            if (check_previous && position > 0)
+            {
+                previous_is_identifier = IsIdentifierChar(static_cast<unsigned char>(text[position - 1]));
+            }
+
+            bool next_is_identifier = false;
+            const size_t end = position + keyword.size();
+            if (check_next && end < text.size())
+            {
+                next_is_identifier = IsIdentifierChar(static_cast<unsigned char>(text[end]));
+            }
+
+            if (!previous_is_identifier && !next_is_identifier)
+            {
+                return true;
+            }
+            position = text.find(keyword, position + 1);
         }
     }
     return false;
