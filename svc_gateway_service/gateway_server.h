@@ -26,7 +26,7 @@ public:
      * @param host 网关服务器监听地址
      * @param port 网关服务器监听端口
      */
-    GatewayServer(std::shared_ptr<httplib::Server> http_server, const std::string& host, int port);
+    GatewayServer(std::shared_ptr<httplib::Server> http_server, cpp_toolkit::SvcWatcher::Ptr svc_watcher, const std::string& host, int port);
 
     /**
      * @brief 析构函数, 自动调用 Stop 方法停止服务器并回收线程资源
@@ -71,6 +71,9 @@ private:
 
     // 服务器监听线程
     std::thread server_thread_;
+
+    // 服务发现(监控)对象, 监控子服务的上线、下线事件
+    cpp_toolkit::SvcWatcher::Ptr svc_watcher_;
 };
 
 /**

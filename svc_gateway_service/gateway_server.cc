@@ -16,12 +16,16 @@ namespace chat_excel
 // HTTP 服务器读写超时时间(秒), 5 分钟
 static constexpr int kHttpReadWriteTimeoutSeconds = 300;
 
-GatewayServer::GatewayServer(std::shared_ptr<httplib::Server> http_server, const std::string& host, int port)
+GatewayServer::GatewayServer(std::shared_ptr<httplib::Server> http_server, cpp_toolkit::SvcWatcher::Ptr svc_watcher, const std::string& host, int port)
     : http_server_(http_server),
-      host_(host),
       port_(port),
-      is_running_(false)
+      is_running_(false),
+      svc_watcher_(svc_watcher)
 {
+    // host 参数可能为 host:port 形式(统一 server_addr 命名), 监听时仅需主机部分, 端口单独由 port_ 提供
+    std::size_t colon_position = host.rfind(':');
+    host_ = (colon_position == std::string::npos) ? host : host.substr(0, colon_position);
+
     INFO("网关服务器对象初始化完成, 监听地址: {} , 端口: {}", host_, port_);
 }
 
@@ -196,7 +200,7 @@ GatewayServerBuilder& GatewayServerBuilder::BuildStaticFiles(const std::string& 
 GatewayServerBuilder& GatewayServerBuilder::BuildGatewayServer(const std::string& host, int port)
 {
     // 构建网关服务器对象
-    gateway_server_ = std::make_shared<GatewayServer>(http_server_, host, port);
+    gateway_server_ = std::make_shared<GatewayServer>(http_server_, svc_watcher_, host, port);
     return *this;
 }
 
