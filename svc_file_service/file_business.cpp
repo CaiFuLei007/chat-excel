@@ -290,12 +290,13 @@ void ImportWorksheetDataToDatabase(const cpp_toolkit::ChannelManager::Ptr& chann
  * @param table_name 数据表名称
  * @param page_number 页码, 从 1 开始
  * @param page_size 每页行数, 从 1 开始
+ * @param force_original 是否强制查询原始表数据(默认 false, 存在修改时查询临时表数据)
  * @return 表结构信息(列信息与当前页表数据)
  */
 db_proto::TableSchemaInfo GetTableDataFromDatabase(
     const cpp_toolkit::ChannelManager::Ptr& channel_manager, const std::string& request_id,
     const std::string& connection_id, const std::string& table_name, int page_number,
-    int page_size)
+    int page_size, bool force_original)
 {
     // 通过信道管理对象获取数据库子服务通信信道
     cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(kDatabaseServiceName);
@@ -313,6 +314,7 @@ db_proto::TableSchemaInfo GetTableDataFromDatabase(
     rpc_request.set_table_name(table_name);
     rpc_request.set_page_number(page_number);
     rpc_request.set_page_size(page_size);
+    rpc_request.set_force_original(force_original);
 
     db_proto::DatabaseService_Stub database_service_stub(channel.get());
     brpc::Controller controller;
@@ -721,7 +723,7 @@ std::vector<FileInfo> FileBusiness::GetFileList(const std::string& request_id,
 
 FileInfo FileBusiness::PreviewExcel(const std::string& request_id, const std::string& user_id,
                                     const std::string& file_id, int page_number, int page_size,
-                                    file_proto::ExcelData* excel_data)
+                                    bool force_original, file_proto::ExcelData* excel_data)
 {
     // 获取文件信息并校验文件属主
     const FileInfo file_info = GetFileInfoWithOwnerCheck(request_id, user_id, file_id);
@@ -736,7 +738,7 @@ FileInfo FileBusiness::PreviewExcel(const std::string& request_id, const std::st
     {
         const db_proto::TableSchemaInfo table_schema = GetTableDataFromDatabase(
             channel_manager_, request_id, kExcelDbConnectionId, worksheet_info.table_name,
-            page_number, page_size);
+            page_number, page_size, force_original);
 
         // 将表结构与表数据转换为预览结果中的 Sheet 结构
         file_proto::Sheet* sheet = excel_data->add_sheets();
@@ -745,6 +747,8 @@ FileInfo FileBusiness::PreviewExcel(const std::string& request_id, const std::st
         for (const db_proto::ColumnInfo& column_info : table_schema.column_info())
         {
             sheet->add_columns(column_info.name());
+            // 列类型与列名一一对应, 供前端按数据类型展示(如 bool 展示 true/false)
+            sheet->add_column_types(column_info.type());
         }
         for (const db_proto::Row& table_row : table_schema.table_data().rows())
         {

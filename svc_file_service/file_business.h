@@ -123,12 +123,13 @@ public:
      * @param file_id 文件 ID
      * @param page_number 预览数据页号, 从 1 开始
      * @param page_size 预览数据每页条数, 从 1 开始
+     * @param force_original 是否强制查询原始表数据(默认 false, 存在修改时预览临时表数据)
      * @param excel_data 预览的 Excel 数据输出参数, 每个工作表对应一个 Sheet
      * @return 文件信息
      */
     FileInfo PreviewExcel(const std::string& request_id, const std::string& user_id,
                           const std::string& file_id, int page_number, int page_size,
-                          file_proto::ExcelData* excel_data);
+                          bool force_original, file_proto::ExcelData* excel_data);
 
     /**
      * @brief 上传 SQLite 文件数据, 实现逻辑与上传 Excel 文件相同(上传文件到

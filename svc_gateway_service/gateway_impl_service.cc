@@ -1595,6 +1595,8 @@ void GatewayServiceImpl::HandleFilePreview(const httplib::Request& request, http
     {
         page_size = kDefaultPreviewPageSize;
     }
+    // 是否强制查询原始表数据(可选字段, 缺省为 false, 存在修改时预览临时表数据)
+    const bool force_original = request_json["forceOriginal"].asBool();
 
     // 2. 鉴权, 检查会话是否有效并获取用户 ID, 失败时透传错误码与错误信息
     int error_code = 0;
@@ -1623,6 +1625,7 @@ void GatewayServiceImpl::HandleFilePreview(const httplib::Request& request, http
     rpc_request.set_page_number(page_number);
     rpc_request.set_page_size(page_size);
     rpc_request.set_user_id(user_id);
+    rpc_request.set_force_original(force_original);
 
     // 5. 调用文件子服务的 RPC 接口, 失败时透传错误码与错误信息
     file_proto::PreviewExcelResponse rpc_response;
@@ -1658,6 +1661,13 @@ void GatewayServiceImpl::HandleFilePreview(const httplib::Request& request, http
             columns.append(column);
         }
         sheet_json["columns"] = columns;
+
+        Json::Value column_types(Json::arrayValue);
+        for (const std::string& column_type : sheet.column_types())
+        {
+            column_types.append(column_type);
+        }
+        sheet_json["columnTypes"] = column_types;
 
         Json::Value rows(Json::arrayValue);
         for (const file_proto::Row& row : sheet.data())

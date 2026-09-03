@@ -111,6 +111,7 @@ message PreviewExcelRequest {
   int32 page_number = 4; // 页码（从1开始，默认为1）
   int32 page_size = 5; // 每页行数（默认为50）
   string user_id = 6; // 用户ID
+  bool force_original = 7; // 是否强制查询原始表数据（默认false，存在修改时预览临时表数据）
 }
 
 message Row {
@@ -126,6 +127,7 @@ message Sheet {
   int32 page_size = 6; // 每页行数
   repeated Row data = 7; // 行数据（当前页数据）
   repeated string columns = 8; // 列名列表
+  repeated string column_types = 9; // 列类型列表（与列名一一对应，用于前端按数据类型展示）
 }
 
 message ExcelData {

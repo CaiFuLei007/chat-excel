@@ -20,7 +20,7 @@ constexpr const char* kSQLiteListTablesSql =
     "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
 
 // SQLite 布尔列类型(Excel BOOLEAN 类型转化后的类型)
-constexpr const char* kSQLiteBooleanColumnType = "INTEGER";
+constexpr const char* kSQLiteBooleanColumnType = "BOOLEAN";
 
 // SQLite 文本列类型(Excel DATE 类型转化后的类型)
 constexpr const char* kSQLiteDateColumnType = "TEXT";
@@ -302,7 +302,8 @@ TableInfo SQLiteDatabaseDriver::GetTableStructure(const std::string& table_name)
 
 std::string SQLiteDatabaseDriver::ConvertExcelColumnType(const std::string& excel_type) const
 {
-    // BOOLEAN 类型转化为 INTEGER 类型, DATE 类型转化为 TEXT 类型, 其余类型原样返回
+    // BOOLEAN 类型保留为 BOOLEAN(SQLite 类型亲和性按 NUMERIC 处理, 0/1 正常存储),
+    // 便于前端按布尔类型展示; DATE 类型转化为 TEXT 类型, 其余类型原样返回
     if (excel_type == kExcelBooleanColumnType)
     {
         return kSQLiteBooleanColumnType;

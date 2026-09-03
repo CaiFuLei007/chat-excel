@@ -29,7 +29,10 @@ constexpr const char* kMySQLListTablesSql = "SHOW TABLES";
 constexpr const char* kMySQLAutoIncrementKeyword = "auto_increment";
 
 // MySQL 布尔列类型(Excel BOOLEAN 类型转化后的类型)
-constexpr const char* kMySQLBooleanColumnType = "INT";
+constexpr const char* kMySQLBooleanColumnType = "BOOLEAN";
+
+// MySQL DESC 语句对 BOOLEAN 列返回的实际类型文本
+constexpr const char* kMySQLBooleanDescType = "tinyint(1)";
 
 // MySQL 文本列类型(Excel DATE 类型转化后的类型)
 constexpr const char* kMySQLDateColumnType = "TEXT";
@@ -452,7 +455,14 @@ TableInfo MySQLDatabaseDriver::GetTableStructure(const std::string& table_name)
         const std::vector<std::string>& row = result.GetRow(row_index);
         ColumnInfo column_info;
         column_info.name = GetRowColumnValue(row, 0);                      // Field
-        column_info.type = GetRowColumnValue(row, 1);                      // Type
+        // BOOLEAN 列在 MySQL 中实际为 TINYINT(1), DESC 返回 tinyint(1),
+        // 映射回 BOOLEAN 供上层按布尔类型处理(前端展示 true/false)
+        std::string column_type = GetRowColumnValue(row, 1);               // Type
+        if (column_type == kMySQLBooleanDescType)
+        {
+            column_type = kExcelBooleanColumnType;
+        }
+        column_info.type = column_type;
         column_info.nullable = GetRowColumnValue(row, 2) == "YES";         // Null
         column_info.is_primary_key = GetRowColumnValue(row, 3) == "PRI";   // Key
         column_info.default_value = GetRowColumnValue(row, 4);             // Default
@@ -467,7 +477,8 @@ TableInfo MySQLDatabaseDriver::GetTableStructure(const std::string& table_name)
 
 std::string MySQLDatabaseDriver::ConvertExcelColumnType(const std::string& excel_type) const
 {
-    // BOOLEAN 类型转化为 INT 类型, DATE 类型转化为 TEXT 类型, 其余类型原样返回
+    // BOOLEAN 类型保留为 BOOLEAN(MySQL 中等价于 TINYINT(1)), 便于前端按布尔类型展示;
+    // DATE 类型转化为 TEXT 类型, 其余类型原样返回
     if (excel_type == kExcelBooleanColumnType)
     {
         return kMySQLBooleanColumnType;

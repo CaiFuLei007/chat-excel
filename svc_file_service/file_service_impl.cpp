@@ -432,6 +432,7 @@ void FileServiceImpl::PreviewExcel(google::protobuf::RpcController* /*controller
                                                                 request->user_id(), request->file_id(),
                                                                 request->page_number(),
                                                                 request->page_size(),
+                                                                request->force_original(),
                                                                 result->mutable_excel_data());
 
         // 将文件信息填充到响应结果中

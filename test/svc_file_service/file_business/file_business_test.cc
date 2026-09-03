@@ -661,7 +661,7 @@ TEST_F(FileBusinessTest, PreviewExcelReturnsFileInfo)
 
     chat_excel_proto::file_service::ExcelData excel_data;
     const FileInfo file_info =
-        file_business_->PreviewExcel(kRequestId, kTestUserId, file_id, 1, 10, &excel_data);
+        file_business_->PreviewExcel(kRequestId, kTestUserId, file_id, 1, 10, false, &excel_data);
     EXPECT_EQ(file_info.file_id, file_id);
     EXPECT_EQ(file_info.file_name, "test_excel.xlsx");
 
@@ -689,7 +689,7 @@ TEST_F(FileBusinessTest, PreviewExcelOwnerMismatch)
     chat_excel_proto::file_service::ExcelData excel_data;
     ExpectBusinessError(
         [this, &file_id, &excel_data]
-        { file_business_->PreviewExcel(kRequestId, kOtherUserId, file_id, 1, 10, &excel_data); },
+        { file_business_->PreviewExcel(kRequestId, kOtherUserId, file_id, 1, 10, false, &excel_data); },
         ErrorCode::FILE_USER_MISMATCH);
 }
 
