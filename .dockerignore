@@ -1,0 +1,17 @@
+# build 目录: 仅保留镜像需要的内容(build/bin 聚合产物), 其余编译中间文件不进入构建上下文
+build/*
+!build/bin/
+
+# 为避免 COPY ./build/bin/*_service 误带测试产物, 测试关闭时不生成该目录, 无碍
+
+# 旧 bin 目录(产出已迁移到 build/bin, 不再使用)
+bin/
+
+# git 元数据
+.git/
+
+# 环境变量(含敏感密钥, 不进入构建上下文)
+.env
+
+# 自身
+.dockerignore

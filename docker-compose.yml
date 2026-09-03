@@ -1,0 +1,181 @@
+networks:
+  chatexcel-net:
+    external: true
+
+# 通用中间件/日志配置环境变量(共享一次, .env 中统一覆盖)
+x-common-env: &common-env
+  LOGGER_FILE: ${LOGGER_FILE:-stdout}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  MYSQL_HOST: ${MYSQL_HOST:-mysql}
+  MYSQL_PORT: ${MYSQL_PORT:-3306}
+  MYSQL_USER: ${MYSQL_USER:-root}
+  MYSQL_DATABASE: ${MYSQL_DATABASE:-chatexcel}
+  MYSQL_CHARSET: ${MYSQL_CHARSET:-utf8}
+  MYSQL_POOL: ${MYSQL_POOL:-3}
+  REDIS_HOST: ${REDIS_HOST:-redis}
+  REDIS_PORT: ${REDIS_PORT:-6379}
+  REDIS_USER: ${REDIS_USER:-default}
+  REDIS_DB: ${REDIS_DB:-0}
+  REDIS_POOL: ${REDIS_POOL:-3}
+  ETCD_ADDR: ${ETCD_ADDR:-http://etcd:2379}
+  REGISTRY_TTL: ${REGISTRY_TTL:-10}
+  FDFS_TRACKER_SERVERS: ${FDFS_TRACKER_SERVERS:-fastdfs-tracker:22122}
+  SMTP_SERVER: ${SMTP_SERVER:-smtp.qq.com:465}
+  WORKER_THREAD_COUNT: ${WORKER_THREAD_COUNT:-3}
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+services:
+  gateway:
+    image: ccr.ccs.tencentyun.com/caifulei/chat_excel:latest
+    container_name: chat_excel-gateway
+    environment:
+      <<: *common-env
+      CONF_NAME: /home/chat_excel/conf_templates/chat_excel.conf.tmpl
+      BIN_NAME: gateway_service
+      LISTEN_PORT: 8000
+      SERVICE_NAME: GatewayService
+      SERVICE_ADDR: 0.0.0.0:8000
+    ports:
+      - 8000:8000
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://gateway:8000/ >/dev/null || exit 1"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - chatexcel-net
+
+  user:
+    image: ccr.ccs.tencentyun.com/caifulei/chat_excel:latest
+    container_name: chat_excel-user
+    environment:
+      <<: *common-env
+      CONF_NAME: /home/chat_excel/conf_templates/chat_excel.conf.tmpl
+      BIN_NAME: user_service
+      LISTEN_PORT: 8001
+      SERVICE_NAME: UserService
+      SERVICE_ADDR: user:8001
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请通过 .env 或环境变量配置 MYSQL_PASSWORD}
+    ports:
+      - 8001:8001
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://user:8001/status >/dev/null || exit 1"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - chatexcel-net
+
+  notify:
+    image: ccr.ccs.tencentyun.com/caifulei/chat_excel:latest
+    container_name: chat_excel-notify
+    environment:
+      <<: *common-env
+      CONF_NAME: /home/chat_excel/conf_templates/chat_excel.conf.tmpl
+      BIN_NAME: notify_service
+      LISTEN_PORT: 8002
+      SERVICE_NAME: NotifyService
+      SERVICE_ADDR: notify:8002
+      SMTP_USERNAME: ${SMTP_USERNAME:?请通过 .env 或环境变量配置 SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?请通过 .env 或环境变量配置 SMTP_PASSWORD}
+      FROM_EMAIL: ${FROM_EMAIL:?请通过 .env 或环境变量配置 FROM_EMAIL}
+    ports:
+      - 8002:8002
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://notify:8002/status >/dev/null || exit 1"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - chatexcel-net
+
+  excel:
+    image: ccr.ccs.tencentyun.com/caifulei/chat_excel:latest
+    container_name: chat_excel-excel
+    environment:
+      <<: *common-env
+      CONF_NAME: /home/chat_excel/conf_templates/chat_excel.conf.tmpl
+      BIN_NAME: excel_parse_service
+      LISTEN_PORT: 8003
+      SERVICE_NAME: ExcelParseService
+      SERVICE_ADDR: excel:8003
+    ports:
+      - 8003:8003
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://excel:8003/status >/dev/null || exit 1"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - chatexcel-net
+
+  file:
+    image: ccr.ccs.tencentyun.com/caifulei/chat_excel:latest
+    container_name: chat_excel-file
+    environment:
+      <<: *common-env
+      CONF_NAME: /home/chat_excel/conf_templates/chat_excel.conf.tmpl
+      BIN_NAME: file_service
+      LISTEN_PORT: 8004
+      SERVICE_NAME: FileService
+      SERVICE_ADDR: file:8004
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请通过 .env 或环境变量配置 MYSQL_PASSWORD}
+    ports:
+      - 8004:8004
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://file:8004/status >/dev/null || exit 1"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - chatexcel-net
+
+  database:
+    image: ccr.ccs.tencentyun.com/caifulei/chat_excel:latest
+    container_name: chat_excel-database
+    environment:
+      <<: *common-env
+      CONF_NAME: /home/chat_excel/conf_templates/chat_excel.conf.tmpl
+      BIN_NAME: database_service
+      LISTEN_PORT: 8005
+      SERVICE_NAME: DataBaseService
+      SERVICE_ADDR: database:8005
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请通过 .env 或环境变量配置 MYSQL_PASSWORD}
+    ports:
+      - 8005:8005
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://database:8005/status >/dev/null || exit 1"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - chatexcel-net
+
+  ai:
+    image: ccr.ccs.tencentyun.com/caifulei/chat_excel:latest
+    container_name: chat_excel-ai
+    environment:
+      <<: *common-env
+      CONF_NAME: /home/chat_excel/conf_templates/chat_excel.conf.tmpl
+      BIN_NAME: ai_service
+      LISTEN_PORT: 8006
+      SERVICE_NAME: AIService
+      SERVICE_ADDR: ai:8006
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请通过 .env 或环境变量配置 MYSQL_PASSWORD}
+      CHAT_SDK_MODELS: ${CHAT_SDK_MODELS:?请通过 .env 或环境变量配置 AI 模型 JSON}
+    ports:
+      - 8006:8006
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://ai:8006/status >/dev/null || exit 1"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - chatexcel-net
