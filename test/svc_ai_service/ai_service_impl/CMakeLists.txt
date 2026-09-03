@@ -26,5 +26,8 @@ add_custom_command(TARGET ai_service_impl_test POST_BUILD
             $<TARGET_FILE_DIR:ai_service_impl_test>/prompt_template
 )
 
-# 注册单元测试
+# 注册单元测试(可执行文件输出到 bin/test/, 需在该目录下运行以加载提示词模板)
 add_test(NAME AiServiceImplTest COMMAND ai_service_impl_test)
+set_tests_properties(AiServiceImplTest PROPERTIES
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/bin/test
+)

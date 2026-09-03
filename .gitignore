@@ -6,6 +6,9 @@ build/
 .cache/
 compile_commands.json
 
+# 构建产物输出目录(可执行文件与静态库), 可由 cmake 构建重新生成
+bin/
+
 .idea/
 
 *.swp
