@@ -7,7 +7,6 @@ build/
 compile_commands.json
 
 .idea/
-www/
 
 *.swp
 

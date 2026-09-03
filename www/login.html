@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChatExcel — 登录 / 注册</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/auth.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2'%3E%3Cpath d='M4 4h16v12H4z'/%3E%3Cpath d='M4 9h16M9 4v12'/%3E%3C/svg%3E">
+</head>
+<body class="auth-page">
+
+  <!-- 顶部导航 -->
+  <nav class="auth-nav">
+    <div class="container nav-inner">
+      <a class="brand" href="index.html">
+        <span class="brand-logo" id="auth-nav-logo"></span>
+        <span>ChatExcel</span>
+      </a>
+      <button class="lang-switch" type="button" aria-label="Switch language"></button>
+    </div>
+  </nav>
+
+  <main class="auth-main">
+    <div class="card auth-card">
+      <div class="auth-brand-logo" id="auth-logo"></div>
+      <h1 class="auth-title" data-i18n="auth.welcome"></h1>
+      <p class="auth-subtitle" data-i18n="auth.welcomeSub"></p>
+
+      <!-- 登录 / 注册 主 Tab -->
+      <div class="auth-tabs" role="tablist">
+        <button class="auth-tab active" data-auth-tab="login" type="button" data-i18n="auth.login"></button>
+        <button class="auth-tab" data-auth-tab="register" type="button" data-i18n="auth.register"></button>
+      </div>
+
+      <!-- ================= 登录面板 ================= -->
+      <div class="auth-panel" id="panel-login">
+        <!-- 登录方式子 Tab -->
+        <div class="login-method-tabs">
+          <button class="login-method-tab active" data-method="passwd" type="button" data-i18n="auth.passwdLogin"></button>
+          <button class="login-method-tab" data-method="vcode" type="button" data-i18n="auth.vcodeLogin"></button>
+        </div>
+
+        <!-- 账号密码登录 -->
+        <form id="form-passwd-login" novalidate>
+          <div class="form-group" data-field="username">
+            <label class="form-label" data-i18n="auth.account"></label>
+            <input class="input" type="text" name="username" autocomplete="username" data-i18n-ph="auth.accountPh">
+            <div class="error-msg"></div>
+          </div>
+          <div class="form-group" data-field="password">
+            <label class="form-label" data-i18n="auth.password"></label>
+            <div class="input-wrap">
+              <input class="input" type="password" name="password" autocomplete="current-password" data-i18n-ph="auth.passwordPh" style="padding-right:42px">
+              <button class="input-icon-right" type="button" data-toggle-pwd aria-label="Toggle password"></button>
+            </div>
+            <div class="error-msg"></div>
+          </div>
+          <button class="btn btn-primary auth-submit" type="submit" data-i18n="auth.loginBtn"></button>
+        </form>
+
+        <!-- 邮箱验证码登录 -->
+        <form id="form-vcode-login" novalidate style="display:none">
+          <div class="form-group" data-field="email">
+            <label class="form-label" data-i18n="auth.email"></label>
+            <input class="input" type="email" name="email" autocomplete="email" data-i18n-ph="auth.emailPh">
+            <div class="error-msg"></div>
+          </div>
+          <div class="form-group" data-field="verifyCode">
+            <label class="form-label" data-i18n="auth.vcode"></label>
+            <div class="code-row">
+              <input class="input" type="text" name="verifyCode" inputmode="numeric" maxlength="6" data-i18n-ph="auth.vcodePh">
+              <button class="btn btn-secondary btn-sm code-btn" type="button" id="vcode-login-send" data-i18n="auth.sendCode"></button>
+            </div>
+            <div class="error-msg"></div>
+          </div>
+          <button class="btn btn-primary auth-submit" type="submit" data-i18n="auth.loginBtn"></button>
+        </form>
+      </div>
+
+      <!-- ================= 注册面板 ================= -->
+      <div class="auth-panel" id="panel-register" style="display:none">
+        <form id="form-register" novalidate>
+          <div class="form-group" data-field="nickname">
+            <label class="form-label" data-i18n="auth.nickname"></label>
+            <input class="input" type="text" name="nickname" autocomplete="off" data-i18n-ph="auth.nicknamePh">
+            <div class="error-msg"></div>
+          </div>
+          <div class="form-group" data-field="email">
+            <label class="form-label" data-i18n="auth.email"></label>
+            <input class="input" type="email" name="email" autocomplete="email" data-i18n-ph="auth.emailPh">
+            <div class="error-msg"></div>
+          </div>
+          <div class="form-group" data-field="regCode">
+            <label class="form-label" data-i18n="auth.vcode"></label>
+            <div class="code-row">
+              <input class="input" type="text" name="verifyCode" inputmode="numeric" maxlength="6" data-i18n-ph="auth.vcodePh">
+              <button class="btn btn-secondary btn-sm code-btn" type="button" id="reg-send" data-i18n="auth.sendCode"></button>
+            </div>
+            <div class="code-sent-tip" id="reg-code-tip"></div>
+            <div class="error-msg"></div>
+          </div>
+          <div class="auth-divider" data-i18n="auth.secDivider"></div>
+          <div class="form-group" data-field="password">
+            <label class="form-label" data-i18n="auth.password"></label>
+            <div class="input-wrap">
+              <input class="input" type="password" name="password" autocomplete="new-password" data-i18n-ph="auth.regPwdPh" style="padding-right:42px">
+              <button class="input-icon-right" type="button" data-toggle-pwd aria-label="Toggle password"></button>
+            </div>
+            <div class="error-msg"></div>
+          </div>
+          <div class="form-group" data-field="password2">
+            <label class="form-label" data-i18n="auth.password2"></label>
+            <div class="input-wrap">
+              <input class="input" type="password" name="password2" autocomplete="new-password" data-i18n-ph="auth.password2Ph" style="padding-right:42px">
+              <button class="input-icon-right" type="button" data-toggle-pwd aria-label="Toggle password"></button>
+            </div>
+            <div class="error-msg"></div>
+          </div>
+          <button class="btn btn-primary auth-submit" type="submit" data-i18n="auth.registerBtn"></button>
+        </form>
+      </div>
+
+      <div class="auth-footer-note" id="auth-switch-note"></div>
+    </div>
+
+    <div class="auth-back" style="position:absolute;bottom:20px;left:0;right:0;">
+      <span data-i18n="auth.backPrefix"></span> <a href="index.html" data-i18n="auth.backHome"></a>
+    </div>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+</body>
+</html>

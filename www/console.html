@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChatExcel — 控制台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2'%3E%3Cpath d='M4 4h16v12H4z'/%3E%3Cpath d='M4 9h16M9 4v12'/%3E%3C/svg%3E">
+</head>
+<body>
+  <div class="console-app">
+
+    <!-- ================= 顶部栏 ================= -->
+    <header class="console-topbar">
+      <button class="topbar-burger" id="topbar-burger" type="button" aria-label="Menu"></button>
+      <a class="brand" href="index.html">
+        <span class="brand-logo" id="console-logo"></span>
+        <span>ChatExcel</span>
+      </a>
+      <div class="topbar-user">
+        <button class="lang-switch" type="button" aria-label="Switch language"></button>
+        <span class="user-chip">
+          <span class="user-chip-avatar" id="user-avatar"></span>
+          <span id="user-nickname">…</span>
+        </span>
+      </div>
+    </header>
+
+    <div class="console-body">
+      <!-- ================= 侧边栏 ================= -->
+      <aside class="console-sidebar" id="console-sidebar">
+        <button class="sidebar-item active" data-module="chat" type="button"></button>
+        <button class="sidebar-item" data-module="excel" type="button"></button>
+        <button class="sidebar-item" data-module="database" type="button"></button>
+        <button class="sidebar-item" data-module="files" type="button"></button>
+        <button class="sidebar-item" data-module="history" type="button"></button>
+        <button class="sidebar-item" data-module="profile" type="button"></button>
+      </aside>
+      <div class="sidebar-mask" id="sidebar-mask"></div>
+
+      <!-- ================= 主区域 ================= -->
+      <main class="console-main">
+
+        <!-- ========== 模块 1：AI 聊天 ========== -->
+        <section class="module-panel active" id="module-chat">
+          <div class="module-header">
+            <h2 data-i18n="console.modChat"></h2>
+            <div class="spacer"></div>
+            <button class="btn btn-primary btn-sm" id="chat-new-session" type="button"></button>
+          </div>
+          <div class="split" style="padding-top:0">
+            <div class="chat-panel" style="flex:1;background:#fff;border:1px solid var(--border);border-radius:var(--radius-card);overflow:hidden;">
+              <div class="chat-messages" id="chat-messages"></div>
+              <div class="chat-input-bar">
+                <div class="model-picker" id="chat-model-picker"></div>
+                <div class="chat-input-row">
+                  <textarea class="chat-textarea" id="chat-input" rows="1" data-i18n-ph="console.inputPh"></textarea>
+                  <button class="send-btn" id="chat-send" type="button" aria-label="Send"></button>
+                </div>
+                <div class="chat-hint" id="chat-hint"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========== 模块 2：Excel 智能助手 ========== -->
+        <section class="module-panel" id="module-excel">
+          <div class="module-header">
+            <h2 data-i18n="console.modExcel"></h2>
+            <div class="inner-tabs" id="excel-tabs">
+              <button class="inner-tab active" data-pane="excel-preview" type="button" data-i18n="console.filePreview"></button>
+              <button class="inner-tab" data-pane="excel-result" type="button" data-i18n="console.resultAnalysis"></button>
+            </div>
+            <div class="spacer"></div>
+            <button class="btn btn-primary btn-sm" id="excel-new-session" type="button"></button>
+          </div>
+          <div class="split">
+            <!-- 左：预览 / 结果 -->
+            <div class="split-left">
+              <div class="pane active" data-pane="excel-preview" style="display:flex">
+                <div class="upload-zone" id="excel-upload-zone">
+                  <div class="icon-box" id="excel-upload-icon"></div>
+                  <div class="uz-title" data-i18n="console.uploadTitle"></div>
+                  <div class="uz-desc" data-i18n="console.uploadDesc"></div>
+                  <input type="file" id="excel-file-input" accept=".xlsx" hidden>
+                </div>
+                <div id="excel-preview-area" style="display:flex;flex-direction:column;flex:1;min-height:0;"></div>
+              </div>
+              <div class="pane" data-pane="excel-result">
+                <div class="result-pane" id="excel-result-area">
+                  <div class="empty-state" id="excel-result-empty"></div>
+                  <div id="excel-result-content" style="display:none">
+                    <div class="result-summary" id="excel-result-summary"></div>
+                    <div id="excel-result-chart"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- 右：聊天区 -->
+            <div class="split-right">
+              <div class="chat-panel">
+                <div class="chat-head">
+                  <span class="chat-title" id="excel-chat-title"></span>
+                  <div class="spacer"></div>
+                  <div class="chat-selector">
+                    <span data-i18n="console.worksheet"></span>
+                    <select class="input" id="excel-sheet-select"></select>
+                  </div>
+                </div>
+                <div class="chat-messages" id="excel-messages"></div>
+                <div class="chat-input-bar">
+                  <div class="model-picker" id="excel-model-picker"></div>
+                  <div class="chat-input-row">
+                    <textarea class="chat-textarea" id="excel-input" rows="1" data-i18n-ph="console.inputPh"></textarea>
+                    <button class="send-btn" id="excel-send" type="button" aria-label="Send"></button>
+                  </div>
+                  <div class="chat-hint" id="excel-hint"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========== 模块 3：数据库智能助手 ========== -->
+        <section class="module-panel" id="module-database">
+          <div class="module-header">
+            <h2 data-i18n="console.modDb"></h2>
+            <div class="spacer"></div>
+            <button class="btn btn-secondary btn-sm" id="db-back-manage" type="button" style="display:none"></button>
+            <button class="btn btn-primary btn-sm" id="db-new-session" type="button" style="display:none"></button>
+          </div>
+
+          <!-- 状态 A：连接管理页 -->
+          <div class="db-manage" id="db-manage-view">
+            <div class="inner-tabs" id="db-type-tabs" style="display:inline-flex;margin-bottom:22px;">
+              <button class="inner-tab active" data-dbtab="mysql" type="button">MySQL</button>
+              <button class="inner-tab" data-dbtab="sqlite" type="button">SQLite</button>
+            </div>
+
+            <!-- MySQL Tab -->
+            <div id="db-pane-mysql">
+              <div class="db-section-title" id="db-conn-title"></div>
+              <div class="conn-grid" id="db-conn-grid"></div>
+              <div class="empty-state" id="db-conn-empty" style="padding:26px;"></div>
+
+              <div class="db-section-title" id="db-newconn-title"></div>
+              <form class="db-form card" id="db-mysql-form" style="padding:24px;" novalidate>
+                <div class="form-row">
+                  <div class="form-group" data-field="host">
+                    <label class="form-label" data-i18n="db.host"></label>
+                    <input class="input" name="host" type="text" value="127.0.0.1" data-i18n-ph="db.hostPh">
+                    <div class="error-msg"></div>
+                  </div>
+                  <div class="form-group" data-field="port">
+                    <label class="form-label" data-i18n="db.port"></label>
+                    <input class="input" name="port" type="number" value="3306" min="1" max="65535">
+                    <div class="error-msg"></div>
+                  </div>
+                </div>
+                <div class="form-group" data-field="name">
+                  <label class="form-label" data-i18n="db.dbName"></label>
+                  <input class="input" name="name" type="text" data-i18n-ph="db.dbNamePh">
+                  <div class="error-msg"></div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group" data-field="username">
+                    <label class="form-label" data-i18n="db.username"></label>
+                    <input class="input" name="username" type="text" data-i18n-ph="db.usernamePh">
+                    <div class="error-msg"></div>
+                  </div>
+                  <div class="form-group" data-field="password">
+                    <label class="form-label" data-i18n="db.password"></label>
+                    <input class="input" name="password" type="password" data-i18n-ph="db.passwordPh">
+                    <div class="error-msg"></div>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="db.charset"></label>
+                  <select class="input" name="charset">
+                    <option value="utf8mb4">utf8mb4</option>
+                    <option value="utf8">utf8</option>
+                    <option value="latin1">latin1</option>
+                  </select>
+                </div>
+                <button class="btn btn-primary" type="submit" data-i18n="db.connect"></button>
+              </form>
+            </div>
+
+            <!-- SQLite Tab -->
+            <div id="db-pane-sqlite" style="display:none">
+              <div class="db-section-title" id="sqlite-upload-title"></div>
+              <div class="upload-zone" id="sqlite-upload-zone" style="margin:0 0 24px;">
+                <div class="icon-box" id="sqlite-upload-icon"></div>
+                <div class="uz-title" data-i18n="db.sqliteUploadTitle"></div>
+                <div class="uz-desc" data-i18n="db.sqliteUploadDesc"></div>
+                <input type="file" id="sqlite-file-input" accept=".db,.sqlite,.sqlite3" hidden>
+              </div>
+              <div class="db-section-title" id="sqlite-connect-title"></div>
+              <div class="sqlite-file-list" id="sqlite-file-list"></div>
+              <button class="btn btn-primary" id="sqlite-connect-btn" type="button" data-i18n="db.connect" disabled></button>
+            </div>
+          </div>
+
+          <!-- 状态 B：聊天界面（连接成功后） -->
+          <div class="split" id="db-chat-view" style="display:none">
+            <!-- 左：表预览 / 结果 -->
+            <div class="split-left">
+              <div class="module-header" style="padding:10px 14px;">
+                <div class="inner-tabs" id="db-inner-tabs">
+                  <button class="inner-tab active" data-pane="db-table" type="button" data-i18n="console.tablePreview"></button>
+                  <button class="inner-tab" data-pane="db-result" type="button" data-i18n="console.resultAnalysis"></button>
+                </div>
+              </div>
+              <div class="conn-status-bar" id="db-status-bar" style="display:none"></div>
+              <div class="pane active" data-pane="db-table" style="display:flex">
+                <div class="table-scroll" id="db-table-area">
+                  <div class="empty-state" id="db-table-empty"></div>
+                </div>
+              </div>
+              <div class="pane" data-pane="db-result">
+                <div class="result-pane" id="db-result-area">
+                  <div class="empty-state" id="db-result-empty"></div>
+                  <div id="db-result-content" style="display:none">
+                    <div class="result-summary" id="db-result-summary"></div>
+                    <div id="db-result-chart"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- 右：聊天区 -->
+            <div class="split-right">
+              <div class="chat-panel">
+                <div class="chat-head">
+                  <span class="chat-title" id="db-chat-title"></span>
+                  <div class="spacer"></div>
+                  <div class="chat-selector">
+                    <span data-i18n="console.table"></span>
+                    <select class="input" id="db-table-select"></select>
+                  </div>
+                </div>
+                <div class="chat-messages" id="db-messages"></div>
+                <div class="chat-input-bar">
+                  <div class="model-picker" id="db-model-picker"></div>
+                  <div class="chat-input-row">
+                    <textarea class="chat-textarea" id="db-input" rows="1" data-i18n-ph="console.inputPh"></textarea>
+                    <button class="send-btn" id="db-send" type="button" aria-label="Send"></button>
+                  </div>
+                  <div class="chat-hint" id="db-hint"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========== 模块 4：我的文件 ========== -->
+        <section class="module-panel" id="module-files">
+          <div class="module-header">
+            <h2 data-i18n="console.modFiles"></h2>
+            <div class="spacer"></div>
+            <button class="btn btn-secondary btn-sm" id="files-refresh" type="button"></button>
+          </div>
+          <div class="file-list-wrap" id="file-list-wrap"></div>
+        </section>
+
+        <!-- ========== 模块 5：历史会话 ========== -->
+        <section class="module-panel" id="module-history">
+          <div class="module-header">
+            <h2 data-i18n="console.modHistory"></h2>
+            <div class="spacer"></div>
+            <button class="btn btn-secondary btn-sm" id="history-refresh" type="button"></button>
+          </div>
+          <div class="session-list" id="session-list"></div>
+        </section>
+
+        <!-- ========== 模块 6：个人中心 ========== -->
+        <section class="module-panel" id="module-profile">
+          <div class="module-header">
+            <h2 data-i18n="console.modProfile"></h2>
+          </div>
+          <div class="profile-wrap">
+            <div class="card profile-card">
+              <div class="profile-avatar" id="profile-avatar"></div>
+              <div class="profile-name" id="profile-name">…</div>
+              <div class="profile-row">
+                <span class="pr-label" data-i18n="profile.nickname"></span>
+                <span id="profile-nickname">-</span>
+              </div>
+              <div class="profile-row">
+                <span class="pr-label" data-i18n="profile.email"></span>
+                <span id="profile-email">-</span>
+              </div>
+              <button class="btn btn-danger profile-logout" id="profile-logout" type="button"></button>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/chart.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/file.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

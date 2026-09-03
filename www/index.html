@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChatExcel — 用自然语言驾驭 Excel 与数据库</title>
+  <meta name="description" content="ChatExcel 将 LLM 与数据分析结合，通过自然语言操作 Excel 文件与数据库，让没有技术背景的人也能高效处理复杂数据。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&amp;family=DM+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2'%3E%3Cpath d='M4 4h16v12H4z'/%3E%3Cpath d='M4 9h16M9 4v12'/%3E%3C/svg%3E">
+<script src="js/echarts.min.js"></script></head>
+<body>
+
+  <!-- ================= 导航栏 ================= -->
+  <nav class="site-nav" id="site-nav">
+    <div class="container nav-inner">
+      <a class="brand" href="#top">
+        <span class="brand-logo" id="nav-logo"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v12H4z"></path><path d="M4 9h16M9 4v12"></path><path d="m13 13 2 2 3-3"></path></svg></span>
+        <span>ChatExcel</span>
+      </a>
+      <div class="nav-links" id="nav-links">
+        <a href="#features" data-i18n="nav.features">nav.features</a>
+        <a href="#demo" data-i18n="nav.demo">nav.demo</a>
+        <a href="#architecture" data-i18n="nav.arch">nav.arch</a>
+        <a href="#faq" data-i18n="nav.faq">nav.faq</a>
+      </div>
+      <div class="nav-actions">
+        <button class="lang-switch" type="button" aria-label="Switch language">中文</button>
+        <a class="nav-github" href="https://github.com/CaiFuLei007/chat-excel" target="_blank" rel="noopener" aria-label="GitHub" title="GitHub"><svg class="icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg></a>
+        <a class="btn btn-primary btn-sm" href="login.html" data-i18n="nav.free">nav.free</a>
+        <button class="nav-burger" id="nav-burger" type="button" aria-label="Menu"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg></button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ================= Hero ================= -->
+  <header class="hero" id="top">
+    <div class="container">
+      <span class="pill" id="hero-pill">LLM × Data Analytics</span>
+      <h1 data-i18n-html="hero.title">Master <span class="grad-text">Excel &amp; Databases</span> with Natural Language</h1>
+      <p class="hero-sub" data-i18n="hero.sub">hero.sub</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="login.html" data-i18n="hero.cta1">hero.cta1</a>
+        <a class="btn btn-secondary" href="#architecture" data-i18n="hero.cta2">hero.cta2</a>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ================= 功能特性 ================= -->
+  <section class="section" id="features">
+    <div class="container">
+      <div class="section-head fade-in visible">
+        <h2 data-i18n-html="feat.title">Data analysis as easy as <span class="grad-text">chatting</span></h2>
+        <p data-i18n="feat.sub">feat.sub</p>
+      </div>
+      <div class="feature-grid" id="feature-grid"><div class="card card-hover feature-card fade-in visible">
+        <div class="icon-box"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg></div>
+        <h3>Natural Language Analysis</h3>
+        <p>Ask in one sentence; Excel statistics done automatically</p>
+      </div><div class="card card-hover feature-card fade-in visible">
+        <div class="icon-box"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg></div>
+        <h3>Database Chat</h3>
+        <p>Connect MySQL / SQLite and query like chatting</p>
+      </div><div class="card card-hover feature-card fade-in visible">
+        <div class="icon-box"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div>
+        <h3>Auto SQL</h3>
+        <p>LLM generates and executes SQL from table schemas</p>
+      </div><div class="card card-hover feature-card fade-in visible">
+        <div class="icon-box"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="20" x2="12" y2="10"></line><line x1="18" y1="20" x2="18" y2="4"></line><line x1="6" y1="20" x2="6" y2="16"></line></svg></div>
+        <h3>Visualizations</h3>
+        <p>Auto-generated bar / line / pie and 9 chart types</p>
+      </div><div class="card card-hover feature-card fade-in visible">
+        <div class="icon-box"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg></div>
+        <h3>Email Sharing</h3>
+        <p>Send analysis results to your inbox with one sentence</p>
+      </div><div class="card card-hover feature-card fade-in visible">
+        <div class="icon-box"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"></rect><rect x="9" y="9" width="6" height="6"></rect><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"></path></svg></div>
+        <h3>Multi-Model</h3>
+        <p>Switch freely between multiple LLMs</p>
+      </div></div>
+    </div>
+  </section>
+
+  <!-- ================= 效果演示 ================= -->
+  <section class="section section-gray" id="demo">
+    <div class="container">
+      <div class="section-head fade-in">
+        <h2 data-i18n-html="demo.title">See it in action</h2>
+        <p data-i18n="demo.sub">demo.sub</p>
+      </div>
+      <div class="demo-chat fade-in">
+        <div class="demo-chat-head">
+          <span class="demo-avatar" id="demo-avatar"></span>
+          <span class="demo-name" data-i18n="hero.chatName">hero.chatName</span>
+          <span class="demo-status"><span class="status-dot"></span><span data-i18n="hero.online">hero.online</span></span>
+        </div>
+        <div class="demo-tabs">
+          <button class="demo-tab active" data-demo="excel" type="button" data-i18n="demo.tabExcel">demo.tabExcel</button>
+          <button class="demo-tab" data-demo="db" type="button" data-i18n="demo.tabDb">demo.tabDb</button>
+        </div>
+        <div class="demo-chat-body demo-conv" id="demo-chat-body"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 架构说明 ================= -->
+  <section class="section" id="architecture">
+    <div class="container">
+      <div class="section-head fade-in">
+        <h2 data-i18n-html="arch.title">Microservice Architecture</h2>
+        <p data-i18n="arch.sub">arch.sub</p>
+      </div>
+      <div class="arch-grid" id="arch-grid"><div class="card card-hover arch-card fade-in visible">
+        <div class="icon-box"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg></div>
+        <h3>Gateway</h3>
+        <p>Single entry: requests, auth, protocol conversion, load balancing</p>
+      </div><div class="card card-hover arch-card fade-in visible">
+        <div class="icon-box"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>
+        <h3>User Service</h3>
+        <p>Registration, login, verification codes, user info</p>
+      </div><div class="card card-hover arch-card fade-in visible">
+        <div class="icon-box"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></div>
+        <h3>File Service</h3>
+        <p>Upload / download / delete / preview, file-session mapping</p>
+      </div><div class="card card-hover arch-card fade-in visible">
+        <div class="icon-box"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M3 15h18M9 3v18M15 3v18"></path></svg></div>
+        <h3>Excel Parser</h3>
+        <p>Parse worksheet schemas and data</p>
+      </div><div class="card card-hover arch-card fade-in visible">
+        <div class="icon-box"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg></div>
+        <h3>Storage Service</h3>
+        <p>Connection management, schema access, SQL execution</p>
+      </div><div class="card card-hover arch-card fade-in visible">
+        <div class="icon-box"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.7L19.6 10l-5.7 1.9L12 17.6l-1.9-5.7L4.4 10l5.7-1.9z"></path><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"></path></svg></div>
+        <h3>AI Service</h3>
+        <p>LLM interaction, SQL generation, summary &amp; visualization</p>
+      </div><div class="card card-hover arch-card fade-in visible">
+        <div class="icon-box"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg></div>
+        <h3>Notification</h3>
+        <p>Email codes and AI analysis results delivery</p>
+      </div></div>
+
+      <!-- 数据流转示意图（深色窗口） -->
+      <div class="flow-window fade-in">
+        <div class="flow-window-title">
+          <span class="dot" style="background:#ef4444"></span>
+          <span class="dot" style="background:#f59e0b"></span>
+          <span class="dot" style="background:#10b981"></span>
+          <span style="margin-left:8px" data-i18n="arch.flowTitle">arch.flowTitle</span>
+        </div>
+        <svg class="flow-svg" viewBox="0 0 960 300" role="img" aria-label="Data flow">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#818cf8"></path>
+            </marker>
+          </defs>
+          <!-- 第一行：上传与解析 -->
+          <g class="flow-node">
+            <rect x="10" y="40" width="130" height="52" rx="12" fill="rgba(99,102,241,0.16)" stroke="#6366f1"></rect>
+            <text x="75" y="62" text-anchor="middle" fill="#e0e7ff" font-size="13" font-weight="600" data-i18n="flow.n1">flow.n1</text>
+            <text x="75" y="80" text-anchor="middle" fill="#a5b4fc" font-size="10.5" data-i18n="flow.n1s">flow.n1s</text>
+          </g>
+          <line x1="140" y1="66" x2="180" y2="66" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow)"></line>
+          <g class="flow-node">
+            <rect x="182" y="40" width="130" height="52" rx="12" fill="rgba(99,102,241,0.16)" stroke="#6366f1"></rect>
+            <text x="247" y="62" text-anchor="middle" fill="#e0e7ff" font-size="13" font-weight="600" data-i18n="flow.n2">flow.n2</text>
+            <text x="247" y="80" text-anchor="middle" fill="#a5b4fc" font-size="10.5" data-i18n="flow.n2s">flow.n2s</text>
+          </g>
+          <line x1="312" y1="66" x2="352" y2="66" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow)"></line>
+          <g class="flow-node">
+            <rect x="354" y="40" width="130" height="52" rx="12" fill="rgba(99,102,241,0.16)" stroke="#6366f1"></rect>
+            <text x="419" y="62" text-anchor="middle" fill="#e0e7ff" font-size="13" font-weight="600" data-i18n="flow.n3">flow.n3</text>
+            <text x="419" y="80" text-anchor="middle" fill="#a5b4fc" font-size="10.5" data-i18n="flow.n3s">flow.n3s</text>
+          </g>
+          <line x1="484" y1="66" x2="524" y2="66" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow)"></line>
+          <g class="flow-node">
+            <rect x="526" y="40" width="130" height="52" rx="12" fill="rgba(16,185,129,0.14)" stroke="#10b981"></rect>
+            <text x="591" y="62" text-anchor="middle" fill="#d1fae5" font-size="13" font-weight="600" data-i18n="flow.n4">flow.n4</text>
+            <text x="591" y="80" text-anchor="middle" fill="#6ee7b7" font-size="10.5" data-i18n="flow.n4s">flow.n4s</text>
+          </g>
+          <!-- 折返箭头 -->
+          <path d="M 591 92 L 591 150 L 75 150 L 75 208" fill="none" stroke="#818cf8" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow)"></path>
+          <text x="333" y="142" text-anchor="middle" fill="#818cf8" font-size="11" data-i18n="flow.ask">flow.ask</text>
+          <!-- 第二行：提问与分析 -->
+          <g class="flow-node">
+            <rect x="10" y="210" width="130" height="52" rx="12" fill="rgba(99,102,241,0.16)" stroke="#6366f1"></rect>
+            <text x="75" y="232" text-anchor="middle" fill="#e0e7ff" font-size="13" font-weight="600" data-i18n="flow.n5">flow.n5</text>
+            <text x="75" y="250" text-anchor="middle" fill="#a5b4fc" font-size="10.5" data-i18n="flow.n5s">flow.n5s</text>
+          </g>
+          <line x1="140" y1="236" x2="180" y2="236" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow)"></line>
+          <g class="flow-node">
+            <rect x="182" y="210" width="130" height="52" rx="12" fill="rgba(99,102,241,0.16)" stroke="#6366f1"></rect>
+            <text x="247" y="232" text-anchor="middle" fill="#e0e7ff" font-size="13" font-weight="600" data-i18n="flow.n6">flow.n6</text>
+            <text x="247" y="250" text-anchor="middle" fill="#a5b4fc" font-size="10.5" data-i18n="flow.n6s">flow.n6s</text>
+          </g>
+          <line x1="312" y1="236" x2="352" y2="236" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow)"></line>
+          <g class="flow-node">
+            <rect x="354" y="210" width="130" height="52" rx="12" fill="rgba(99,102,241,0.16)" stroke="#6366f1"></rect>
+            <text x="419" y="232" text-anchor="middle" fill="#e0e7ff" font-size="13" font-weight="600" data-i18n="flow.n7">flow.n7</text>
+            <text x="419" y="250" text-anchor="middle" fill="#a5b4fc" font-size="10.5" data-i18n="flow.n7s">flow.n7s</text>
+          </g>
+          <line x1="484" y1="236" x2="524" y2="236" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow)"></line>
+          <g class="flow-node">
+            <rect x="526" y="210" width="130" height="52" rx="12" fill="rgba(99,102,241,0.16)" stroke="#6366f1"></rect>
+            <text x="591" y="232" text-anchor="middle" fill="#e0e7ff" font-size="13" font-weight="600" data-i18n="flow.n8">flow.n8</text>
+            <text x="591" y="250" text-anchor="middle" fill="#a5b4fc" font-size="10.5" data-i18n="flow.n8s">flow.n8s</text>
+          </g>
+          <line x1="656" y1="236" x2="696" y2="236" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow)"></line>
+          <g class="flow-node">
+            <rect x="698" y="210" width="150" height="52" rx="12" fill="rgba(16,185,129,0.14)" stroke="#10b981"></rect>
+            <text x="773" y="232" text-anchor="middle" fill="#d1fae5" font-size="13" font-weight="600" data-i18n="flow.n9">flow.n9</text>
+            <text x="773" y="250" text-anchor="middle" fill="#6ee7b7" font-size="10.5" data-i18n="flow.n9s">flow.n9s</text>
+          </g>
+          <!-- 右侧说明 -->
+          <text x="790" y="62" fill="#a5b4fc" font-size="12" data-i18n="flow.note1">flow.note1</text>
+          <text x="790" y="82" fill="#6b7280" font-size="11" data-i18n="flow.note2">flow.note2</text>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 使用流程 ================= -->
+  <section class="section section-gray" id="steps">
+    <div class="container">
+      <div class="section-head fade-in">
+        <h2 data-i18n-html="steps.title">Start analyzing in 4 steps</h2>
+        <p data-i18n="steps.sub">steps.sub</p>
+      </div>
+      <div class="steps" id="steps-grid"><div class="card step fade-in visible">
+        <div class="step-num">1</div>
+        <h3>Upload / Connect</h3>
+        <p>Supports .xlsx, SQLite files and MySQL</p>
+      </div><div class="card step fade-in visible">
+        <div class="step-num">2</div>
+        <h3>Ask in Natural Language</h3>
+        <p>Describe your analysis like chatting</p>
+      </div><div class="card step fade-in visible">
+        <div class="step-num">3</div>
+        <h3>Auto Analysis &amp; Charts</h3>
+        <p>LLM generates SQL, returns summary &amp; charts</p>
+      </div><div class="card step fade-in visible">
+        <div class="step-num">4</div>
+        <h3>Share by Email</h3>
+        <p>Send results to your inbox in one sentence</p>
+      </div></div>
+    </div>
+  </section>
+
+  <!-- ================= FAQ ================= -->
+  <section class="section" id="faq">
+    <div class="container">
+      <div class="section-head fade-in">
+        <h2 data-i18n-html="faq.title">FAQ</h2>
+        <p data-i18n="faq.sub">faq.sub</p>
+      </div>
+      <div class="faq-list" id="faq-list"><div class="card faq-item" data-faq="0">
+        <button class="faq-q" type="button">Which file formats are supported?<svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        <div class="faq-a"><div class="faq-a-inner">Excel files in .xlsx; for databases, upload SQLite files (.db / .sqlite / .sqlite3) or connect to MySQL directly.</div></div>
+      </div><div class="card faq-item" data-faq="1">
+        <button class="faq-q" type="button">Can I export or share results?<svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        <div class="faq-a"><div class="faq-a-inner">Yes. Say "email me the results" in the chat and the analysis will be sent to your inbox.</div></div>
+      </div><div class="card faq-item" data-faq="2">
+        <button class="faq-q" type="button">Do modifications affect original tables?<svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        <div class="faq-a"><div class="faq-a-inner">No. Write SQL runs on a copied table (e.g. users → users_temp); original tables stay untouched.</div></div>
+      </div><div class="card faq-item" data-faq="3">
+        <button class="faq-q" type="button">Which LLMs are supported?<svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        <div class="faq-a"><div class="faq-a-inner">The model list is configured on the backend; you can switch between available models anytime in the console.</div></div>
+      </div></div>
+    </div>
+  </section>
+
+  <!-- ================= CTA ================= -->
+  <section class="section" id="cta" style="padding-top:0">
+    <div class="container">
+      <div class="cta-card fade-in">
+        <h2 data-i18n="cta.title">cta.title</h2>
+        <p data-i18n="cta.sub">cta.sub</p>
+        <div class="cta-actions">
+          <a class="btn btn-white" href="login.html" data-i18n="cta.btn1">cta.btn1</a>
+          <a class="btn btn-outline-white" href="#architecture" data-i18n="cta.btn2">cta.btn2</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 页脚 ================= -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <div class="brand">
+            <span class="brand-logo" id="footer-logo"><svg class="icon " viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v12H4z"></path><path d="M4 9h16M9 4v12"></path><path d="m13 13 2 2 3-3"></path></svg></span>
+            <span>ChatExcel</span>
+          </div>
+          <p data-i18n="footer.desc">footer.desc</p>
+        </div>
+        <div class="footer-cols">
+          <div class="footer-col">
+            <h4 data-i18n="footer.product">footer.product</h4>
+            <a href="#features" data-i18n="nav.features">nav.features</a>
+            <a href="#demo" data-i18n="nav.demo">nav.demo</a>
+            <a href="login.html" data-i18n="nav.free">nav.free</a>
+          </div>
+          <div class="footer-col">
+            <h4 data-i18n="footer.resources">footer.resources</h4>
+            <a href="#architecture" data-i18n="nav.arch">nav.arch</a>
+            <a href="#faq" data-i18n="nav.faq">nav.faq</a>
+            <a href="#steps" data-i18n="footer.guide">footer.guide</a>
+          </div>
+          <div class="footer-col">
+            <h4 data-i18n="footer.about">footer.about</h4>
+            <a href="#top" data-i18n="footer.top">footer.top</a>
+            <a href="login.html" data-i18n="nav.login">nav.login</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span data-i18n="footer.copyright">footer.copyright</span>
+        <span class="health-status" id="health-status">
+          <span class="status-dot offline" id="health-dot"></span>
+          <span id="health-text" data-i18n="footer.checking">footer.checking</span>
+        </span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/chart.js"></script>
+  <script src="js/main.js"></script>
+
+
+</body></html>

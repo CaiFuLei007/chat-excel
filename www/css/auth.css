@@ -1,0 +1,58 @@
+/* ============================================================
+   auth.css — 登录注册页专属样式（补充 style.css）
+   ============================================================ */
+
+/* 页面背景：浅灰底 + 两个极淡的主色光斑，营造空间感而不喧宾夺主 */
+.auth-main {
+  position: relative;
+  background:
+    radial-gradient(560px 320px at 12% 8%, rgba(99, 102, 241, 0.07), transparent 65%),
+    radial-gradient(520px 300px at 88% 92%, rgba(16, 185, 129, 0.06), transparent 65%),
+    var(--bg-gray);
+}
+
+.auth-card { animation: auth-card-in 0.45s ease; }
+@keyframes auth-card-in {
+  from { opacity: 0; transform: translateY(14px); }
+}
+
+/* 顶部品牌区 */
+.auth-brand-logo {
+  width: 46px; height: 46px; border-radius: 13px;
+  background: linear-gradient(135deg, #6366f1, #818cf8);
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 16px;
+}
+.auth-brand-logo .icon { width: 24px; height: 24px; }
+
+/* 验证码提示条（发送成功后的引导） */
+.code-sent-tip {
+  display: none; align-items: flex-start; gap: 8px;
+  background: var(--accent-light); color: #047857;
+  border-radius: 10px; padding: 9px 12px;
+  font-size: 12.5px; line-height: 1.5; margin-top: 8px;
+}
+.code-sent-tip.show { display: flex; }
+.code-sent-tip .icon { width: 15px; height: 15px; margin-top: 2px; }
+
+/* 表单组之间的分隔（注册表单较长时的视觉节奏） */
+.auth-divider {
+  display: flex; align-items: center; gap: 12px;
+  color: var(--text-sub); font-size: 12px; margin: 20px 0 16px;
+}
+.auth-divider::before, .auth-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+
+/* 底部返回展示页链接 */
+.auth-back {
+  text-align: center; margin-top: 22px; font-size: 13px; color: var(--text-sub);
+}
+.auth-back a { color: var(--primary); font-weight: 600; }
+.auth-back a:hover { text-decoration: underline; }
+
+/* 移动端 */
+@media (max-width: 480px) {
+  .auth-card { padding: 26px 20px; }
+  .code-btn { min-width: 104px; font-size: 12.5px; padding: 11px 10px; }
+}
