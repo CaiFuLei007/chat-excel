@@ -94,6 +94,7 @@ int main(int argc, char* argv[])
 {
     // 1. 解析 gflags 参数
     gflags::ParseCommandLineFlags(&argc, &argv, true);
+    gflags::ReadFromFlagsFile(FLAGS_conf, argv[0], false);
 
     // 2. 初始化日志记录(异步日志, 不阻塞业务线程)
     //    loggerName 必须非空 : spdlog 注册中心已存在名为空字符串的默认 logger, 空名称会因重名抛出异常

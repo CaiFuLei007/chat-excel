@@ -6,6 +6,9 @@
 #include <cpp-toolkit/logger.h>
 #include "excel_parse_server.h"
 
+// gflags 参数配置文件路径(包含 gflags 参数配置), 相对路径相对于工作目录
+DEFINE_string(conf, "chat_data.conf", "gflags 参数配置文件路径, 相对路径相对于工作目录");
+
 // 日志输出文件路径, "stdout" 表示输出到标准输出, 其他值为日志文件路径
 DEFINE_string(logger_file, "stdout", "日志输出文件路径, stdout 表示输出到标准输出");
 
@@ -109,7 +112,10 @@ int main(int argc, char* argv[])
     // 1. 解析 gflags 参数
     gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-    // 2. 初始化日志记录(异步日志, 不阻塞业务线程)
+    // 2. 从配置文件读取 gflags 参数(文件中已定义参数的配置覆盖默认值, 未定义的参数自动忽略)
+    gflags::ReadFromFlagsFile(FLAGS_conf, argv[0], false);
+
+    // 3. 初始化日志记录(异步日志, 不阻塞业务线程)
     //    loggerName 必须非空 : spdlog 注册中心已存在名为空字符串的默认 logger, 空名称会因重名抛出异常
     cpp_toolkit::logger_settings logger_settings;
     logger_settings.async = true;

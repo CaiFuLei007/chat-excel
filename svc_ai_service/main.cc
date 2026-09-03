@@ -23,6 +23,9 @@
 #include <cpp-toolkit/util.h>
 #include "svc_ai_service/ai_server.h"
 
+// gflags 参数配置文件路径(包含 gflags 参数配置), 相对路径相对于工作目录
+DEFINE_string(conf, "chat_data.conf", "gflags 参数配置文件路径, 相对路径相对于工作目录");
+
 // 日志输出文件路径, "stdout" 表示输出到标准输出, 其他值为日志文件路径
 DEFINE_string(logger_file, "stdout", "日志输出文件路径, stdout 表示输出到标准输出");
 
@@ -263,6 +266,7 @@ int main(int argc, char* argv[])
 {
     // 1. 解析 gflags 参数
     gflags::ParseCommandLineFlags(&argc, &argv, true);
+    gflags::ReadFromFlagsFile(FLAGS_conf, argv[0], false);
 
     // 2. 初始化日志记录(异步日志, 不阻塞业务线程)
     //    注意顺序 : aichat_sdk 与 cpp-toolkit 的 initLogger 都会调用 spdlog::init_thread_pool
