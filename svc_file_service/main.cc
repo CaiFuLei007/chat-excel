@@ -11,6 +11,9 @@
 #include <cpp-toolkit/redis.h>
 #include "svc_file_service/file_server.h"
 
+// gflags 参数配置文件路径(包含 gflags 参数配置), 相对路径相对于工作目录
+DEFINE_string(conf, "chat_data.conf", "gflags 参数配置文件路径, 相对路径相对于工作目录");
+
 // 日志输出文件路径, "stdout" 表示输出到标准输出, 其他值为日志文件路径
 DEFINE_string(logger_file, "stdout", "日志输出文件路径, stdout 表示输出到标准输出");
 
@@ -67,10 +70,10 @@ DEFINE_int32(listen_port, 8084, "文件子服务监听端口");
 DEFINE_string(etcd_address, "http://127.0.0.1:2379", "ETCD 注册中心地址");
 
 // 文件子服务名称
-DEFINE_string(service_name, "FileService", "文件子服务名称");
+DEFINE_string(server_name, "FileService", "文件子服务名称");
 
 // 文件子服务注册地址(须与 host:listen_port 一致, 客户端可访问)
-DEFINE_string(service_addr, "127.0.0.1:8084", "文件子服务注册地址");
+DEFINE_string(server_addr, "127.0.0.1:8084", "文件子服务注册地址");
 
 // 需要监控的子服务名称列表(逗号分隔), Excel 解析子服务负责 Excel 文件解析,
 // 数据库子服务负责 Excel 数据的保存与预览查询,
@@ -197,10 +200,10 @@ int main(int argc, char* argv[])
     // 6. 组装 ETCD 注册中心配置信息(注册中心地址/服务名称/服务地址)
     chat_excel::file_service::EtcdSettings etcd_settings;
     etcd_settings.etcd_center_addr = FLAGS_etcd_address;
-    etcd_settings.service_name = FLAGS_service_name;
-    etcd_settings.service_addr = FLAGS_service_addr;
+    etcd_settings.service_name = FLAGS_server_name;
+    etcd_settings.service_addr = FLAGS_server_addr;
     INFO("ETCD 注册中心配置组装完成, 地址: {} , 服务: {} -> {}",
-         FLAGS_etcd_address, FLAGS_service_name, FLAGS_service_addr);
+         FLAGS_etcd_address, FLAGS_server_name, FLAGS_server_addr);
 
     // 7. 解析需要监控的子服务名称列表
     std::vector<std::string> care_service_names = SplitCommaSeparated(FLAGS_care_service_names);

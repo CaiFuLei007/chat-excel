@@ -10,6 +10,7 @@
 #include <cpp-toolkit/util.h>
 #include <jsoncpp/json/json.h>
 #include "common/exception.h"
+#include "common/service_flags.h"
 #include "ai_service.pb.h"
 #include "database_service.pb.h"
 #include "file_service.pb.h"
@@ -32,18 +33,6 @@ namespace ai_proto = ::chat_excel_proto::ai_service;
 
 namespace
 {
-
-// 用户子服务名称(与用户子服务注册到 ETCD 注册中心的服务名保持一致)
-constexpr char kUserServiceName[] = "UserService";
-
-// 文件子服务名称(与文件子服务注册到 ETCD 注册中心的服务名保持一致)
-constexpr char kFileServiceName[] = "FileService";
-
-// 数据库子服务名称(与数据库子服务注册到 ETCD 注册中心的服务名保持一致)
-constexpr char kDatabaseServiceName[] = "DataBaseService";
-
-// AI 子服务名称(与 AI 子服务注册到 ETCD 注册中心的服务名保持一致)
-constexpr char kAiServiceName[] = "AIService";
 
 // 用户子服务 RPC 调用超时时间(毫秒)
 constexpr int kRpcTimeoutMilliseconds = 3000;
@@ -631,10 +620,10 @@ cpp_toolkit::ChannelPtr GatewayServiceImpl::GetServiceChannel(const std::string&
 std::unique_ptr<proto::UserService_Stub> GatewayServiceImpl::CreateUserRpcStub(cpp_toolkit::ChannelPtr& channel)
 {
     // 获取用户子服务信道
-    channel = GetServiceChannel(kUserServiceName);
+    channel = GetServiceChannel(FLAGS_user_service);
     if (channel == nullptr)
     {
-        ERR("获取用户子服务信道失败, 服务名称: {}", kUserServiceName);
+        ERR("获取用户子服务信道失败, 服务名称: {}", FLAGS_user_service);
         return nullptr;
     }
 
@@ -645,10 +634,10 @@ std::unique_ptr<proto::UserService_Stub> GatewayServiceImpl::CreateUserRpcStub(c
 std::unique_ptr<file_proto::FileService_Stub> GatewayServiceImpl::CreateFileRpcStub(cpp_toolkit::ChannelPtr& channel)
 {
     // 获取文件子服务信道
-    channel = GetServiceChannel(kFileServiceName);
+    channel = GetServiceChannel(FLAGS_file_service);
     if (channel == nullptr)
     {
-        ERR("获取文件子服务信道失败, 服务名称: {}", kFileServiceName);
+        ERR("获取文件子服务信道失败, 服务名称: {}", FLAGS_file_service);
         return nullptr;
     }
 
@@ -659,10 +648,10 @@ std::unique_ptr<file_proto::FileService_Stub> GatewayServiceImpl::CreateFileRpcS
 std::unique_ptr<db_proto::DatabaseService_Stub> GatewayServiceImpl::CreateDatabaseRpcStub(cpp_toolkit::ChannelPtr& channel)
 {
     // 获取数据库子服务信道
-    channel = GetServiceChannel(kDatabaseServiceName);
+    channel = GetServiceChannel(FLAGS_database_service);
     if (channel == nullptr)
     {
-        ERR("获取数据库子服务信道失败, 服务名称: {}", kDatabaseServiceName);
+        ERR("获取数据库子服务信道失败, 服务名称: {}", FLAGS_database_service);
         return nullptr;
     }
 
@@ -673,10 +662,10 @@ std::unique_ptr<db_proto::DatabaseService_Stub> GatewayServiceImpl::CreateDataba
 std::unique_ptr<ai_proto::AIService_Stub> GatewayServiceImpl::CreateAiRpcStub(cpp_toolkit::ChannelPtr& channel)
 {
     // 获取 AI 子服务信道
-    channel = GetServiceChannel(kAiServiceName);
+    channel = GetServiceChannel(FLAGS_ai_service);
     if (channel == nullptr)
     {
-        ERR("获取 AI 子服务信道失败, 服务名称: {}", kAiServiceName);
+        ERR("获取 AI 子服务信道失败, 服务名称: {}", FLAGS_ai_service);
         return nullptr;
     }
 
@@ -2721,7 +2710,7 @@ void GatewayServiceImpl::HandleAiSendStreamMessage(const httplib::Request& reque
     }
 
     // 5. 获取 AI 子服务信道并解析服务地址(host:port), 用于构建 HTTP 客户端
-    cpp_toolkit::ChannelPtr ai_channel = GetServiceChannel(kAiServiceName);
+    cpp_toolkit::ChannelPtr ai_channel = GetServiceChannel(FLAGS_ai_service);
     std::string ai_service_addr = (ai_channel == nullptr) ? "" : ParseChannelAddress(ai_channel);
     if (ai_service_addr.empty())
     {

@@ -26,10 +26,17 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 # =================================================================
 
 # chat-excel/common 目录编译为静态库, 供各子服务与测试复用
-add_library(chat_excel_common STATIC common/exception.cc)
+add_library(chat_excel_common STATIC
+    common/exception.cc
+    common/service_flags.cc
+)
 
 # 以项目根目录作为头文件搜索路径, 支持 #include "common/exception.h" 形式导入
 target_include_directories(chat_excel_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# 链接依赖 :
+#   gflags : service_flags.cc 定义子服务名称 gflags 参数(FlagRegisterer 注册符号)
+target_link_libraries(chat_excel_common PUBLIC gflags)
 
 # =================================================================
 #                      proto / data 模块
@@ -114,6 +121,11 @@ if(chat_excel_ENABLE_TESTING)
     add_executable(exception_test test/common/exception/exception_test.cc)
     target_link_libraries(exception_test PRIVATE chat_excel_common GTest::gtest GTest::gtest_main)
     add_test(NAME ExceptionTest COMMAND exception_test)
+
+    # 子服务名称 gflags 参数单元测试
+    add_executable(service_flags_test test/common/service_flags/service_flags_test.cc)
+    target_link_libraries(service_flags_test PRIVATE chat_excel_common GTest::gtest GTest::gtest_main)
+    add_test(NAME ServiceFlagsTest COMMAND service_flags_test)
 
     # 用户子服务数据访问层单元测试
     add_subdirectory(test/svc_user_service/user_data)

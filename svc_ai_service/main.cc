@@ -87,10 +87,10 @@ DEFINE_int32(listen_port, 8085, "AI 子服务监听端口");
 DEFINE_string(etcd_address, "http://127.0.0.1:2379", "ETCD 注册中心地址");
 
 // AI 子服务名称
-DEFINE_string(service_name, "AIService", "AI 子服务名称");
+DEFINE_string(server_name, "AIService", "AI 子服务名称");
 
 // AI 子服务注册地址(须与 host:listen_port 一致, 客户端可访问)
-DEFINE_string(service_addr, "127.0.0.1:8085", "AI 子服务注册地址");
+DEFINE_string(server_addr, "127.0.0.1:8085", "AI 子服务注册地址");
 
 // 需要监控的子服务名称列表(逗号分隔), 用户子服务提供用户邮箱信息,
 // 数据库子服务提供 Excel 对应的数据库表列表, 通知子服务负责邮件发送,
@@ -320,11 +320,11 @@ int main(int argc, char* argv[])
     // 6. 组装 ETCD 注册中心配置信息(注册中心地址/服务名称/服务地址/服务注册 TTL)
     chat_excel::ai_service::EtcdSettings etcd_settings;
     etcd_settings.etcd_center_addr = FLAGS_etcd_address;
-    etcd_settings.service_name = FLAGS_service_name;
-    etcd_settings.service_addr = FLAGS_service_addr;
+    etcd_settings.service_name = FLAGS_server_name;
+    etcd_settings.service_addr = FLAGS_server_addr;
     etcd_settings.registry_ttl = FLAGS_registry_ttl;
     INFO("ETCD 注册中心配置组装完成, 地址: {} , 服务: {} -> {}",
-         FLAGS_etcd_address, FLAGS_service_name, FLAGS_service_addr);
+         FLAGS_etcd_address, FLAGS_server_name, FLAGS_server_addr);
 
     // 7. 解析需要监控的子服务名称列表
     std::vector<std::string> care_service_names = SplitCommaSeparated(FLAGS_care_service_names);

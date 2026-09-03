@@ -5,6 +5,9 @@
 #include <cpp-toolkit/logger.h>
 #include "notify_server.h"
 
+// gflags 参数配置文件路径(包含 gflags 参数配置), 相对路径相对于工作目录
+DEFINE_string(conf, "chat_data.conf", "gflags 参数配置文件路径, 相对路径相对于工作目录");
+
 // 日志输出文件路径, "stdout" 表示输出到标准输出, 其他值为日志文件路径
 DEFINE_string(logger_file, "stdout", "日志输出文件路径, stdout 表示输出到标准输出");
 
@@ -33,10 +36,10 @@ DEFINE_int32(listen_port, 8082, "通知子服务监听端口");
 DEFINE_string(etcd_address, "http://127.0.0.1:2379", "ETCD 注册中心地址");
 
 // 通知子服务名称
-DEFINE_string(service_name, "NotifyService", "通知子服务名称");
+DEFINE_string(server_name, "NotifyService", "通知子服务名称");
 
 // 通知子服务注册地址(须与 host:listen_port 一致, 客户端可访问)
-DEFINE_string(service_addr, "127.0.0.1:8082", "通知子服务注册地址");
+DEFINE_string(server_addr, "127.0.0.1:8082", "通知子服务注册地址");
 
 // 服务注册 TTL(秒)
 DEFINE_int32(registry_ttl, 10, "服务注册 TTL(秒)");
@@ -114,8 +117,8 @@ int main(int argc, char* argv[])
             .SetWorkerThreadCount(FLAGS_worker_thread_count)
             .SetListenPort(FLAGS_listen_port)
             .SetEtcdAddress(FLAGS_etcd_address)
-            .SetServiceName(FLAGS_service_name)
-            .SetServiceAddr(FLAGS_service_addr)
+            .SetServiceName(FLAGS_server_name)
+            .SetServiceAddr(FLAGS_server_addr)
             .SetRegistryTtl(FLAGS_registry_ttl)
             .Build();
     if (notify_server == nullptr)

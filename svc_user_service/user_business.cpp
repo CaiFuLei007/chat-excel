@@ -10,6 +10,7 @@
 #include <database_service.pb.h>
 #include <notify_service.pb.h>
 #include "common/exception.h"
+#include "common/service_flags.h"
 
 namespace chat_excel
 {
@@ -46,14 +47,8 @@ constexpr int kVerifyCodeMax = 999999;
 // 时间字符串缓冲区大小, yyyy-MM-dd HH:mm:ss 格式共 19 字符, 预留结尾符空间
 constexpr size_t kTimeBufferSize = 32;
 
-// 通知子服务名称, 用于从信道管理对象获取通知子服务通信信道
-constexpr const char* kNotifyServiceName = "NotifyService";
-
 // 通知子服务 RPC 调用超时时间(毫秒)
 constexpr int kNotifyRpcTimeoutMs = 3000;
-
-// 数据库子服务名称, 用于从信道管理对象获取数据库子服务通信信道
-constexpr const char* kDatabaseServiceName = "DataBaseService";
 
 // 数据库子服务 RPC 调用超时时间(毫秒)
 constexpr int kDatabaseRpcTimeoutMs = 3000;
@@ -318,10 +313,10 @@ std::string UserBusiness::GetVerifyCode(const std::string& email)
     verifycode_info.create_time = GetCurrentTime();
 
     // 通过信道管理对象获取通知子服务通信信道
-    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(kNotifyServiceName);
+    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(FLAGS_notify_service);
     if (channel == nullptr)
     {
-        ERR("获取通知子服务信道失败, 服务名称: {}, email: {}", kNotifyServiceName, email);
+        ERR("获取通知子服务信道失败, 服务名称: {}, email: {}", FLAGS_notify_service, email);
         throw ChatExcelException(ErrorCode::USER_NOTIFY_RPC_ERROR);
     }
 
@@ -425,10 +420,10 @@ void UserBusiness::UpdateUserStatus(const UserInfo& user_info, UserStatus status
 void UserBusiness::DeleteUserAllDatabaseConn(const std::string& user_id)
 {
     // 通过信道管理对象获取数据库子服务通信信道
-    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(kDatabaseServiceName);
+    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(FLAGS_database_service);
     if (channel == nullptr)
     {
-        ERR("获取数据库子服务信道失败, 服务名称: {}, user_id: {}", kDatabaseServiceName, user_id);
+        ERR("获取数据库子服务信道失败, 服务名称: {}, user_id: {}", FLAGS_database_service, user_id);
         throw ChatExcelException(ErrorCode::USER_DATABASE_RPC_ERROR);
     }
 

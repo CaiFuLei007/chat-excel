@@ -13,6 +13,7 @@
 #include <jsoncpp/json/json.h>
 
 #include "common/exception.h"
+#include "common/service_flags.h"
 #include "file_service.pb.h"
 #include "svc_database_service/driver/sql_validator.h"
 
@@ -33,9 +34,6 @@ namespace database_service
 
 namespace
 {
-
-// 文件子服务名称(与文件子服务注册到 ETCD 注册中心的服务名保持一致)
-constexpr char kFileServiceName[] = "FileService";
 
 // 文件子服务 RPC 调用超时时间(毫秒), 涉及文件下载等大数据量传输, 超时时间较长
 constexpr int kFileRpcTimeoutMilliseconds = 30 * 1000;
@@ -552,10 +550,10 @@ std::string DatabaseBusiness::GetSQLiteFileId(const std::string& request_id,
     }
 
     // 获取文件子服务信道
-    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(kFileServiceName);
+    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(FLAGS_file_service);
     if (channel == nullptr)
     {
-        ERR("获取文件子服务信道失败, requestId: {}, serviceName: {}", request_id, kFileServiceName);
+        ERR("获取文件子服务信道失败, requestId: {}, serviceName: {}", request_id, FLAGS_file_service);
         throw ChatExcelException(ErrorCode::DB_FILE_RPC_ERROR);
     }
 

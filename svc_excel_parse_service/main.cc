@@ -19,10 +19,10 @@ DEFINE_int32(listen_port, 8083, "Excel 解析子服务监听端口");
 DEFINE_string(etcd_address, "http://127.0.0.1:2379", "ETCD 注册中心地址");
 
 // Excel 解析子服务名称
-DEFINE_string(service_name, "ExcelParseService", "Excel 解析子服务名称");
+DEFINE_string(server_name, "ExcelParseService", "Excel 解析子服务名称");
 
 // Excel 解析子服务注册地址(须与 host:listen_port 一致, 客户端可访问)
-DEFINE_string(service_addr, "127.0.0.1:8083", "Excel 解析子服务注册地址");
+DEFINE_string(server_addr, "127.0.0.1:8083", "Excel 解析子服务注册地址");
 
 // 服务注册 TTL(秒)
 DEFINE_int32(registry_ttl, 10, "服务注册 TTL(秒)");
@@ -123,10 +123,10 @@ int main(int argc, char* argv[])
     // 3. 组装 brpc 子服务服务器配置信息(监听端口/子服务名称/子服务注册地址)
     chat_excel::excel_parse_service::BrpcSettings brpc_settings;
     brpc_settings.listen_port = FLAGS_listen_port;
-    brpc_settings.service_name = FLAGS_service_name;
-    brpc_settings.service_addr = FLAGS_service_addr;
+    brpc_settings.service_name = FLAGS_server_name;
+    brpc_settings.service_addr = FLAGS_server_addr;
     INFO("brpc 服务器配置组装完成, 监听端口: {} , 服务名称: {} , 服务地址: {}",
-         FLAGS_listen_port, FLAGS_service_name, FLAGS_service_addr);
+         FLAGS_listen_port, FLAGS_server_name, FLAGS_server_addr);
 
     // 4. 组装 FastDFS 客户端配置信息(tracker 服务器地址列表),
     //    供服务器构建器在内部完成 FdfsClient 初始化

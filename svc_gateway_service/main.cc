@@ -8,7 +8,11 @@
 #include <gflags/gflags.h>
 #include <spdlog/common.h>
 #include <cpp-toolkit/logger.h>
+#include "common/service_flags.h"
 #include "gateway_server.h"
+
+// gflags 参数配置文件路径(包含 gflags 参数配置), 相对路径相对于工作目录
+DEFINE_string(conf, "chat_data.conf", "gflags 参数配置文件路径, 相对路径相对于工作目录");
 
 // 日志输出文件路径, "stdout" 表示输出到标准输出, 其他值为日志文件路径
 DEFINE_string(logger_file, "stdout", "日志输出文件路径, stdout 表示输出到标准输出");
@@ -16,29 +20,20 @@ DEFINE_string(logger_file, "stdout", "日志输出文件路径, stdout 表示输
 // 日志输出级别, 可选值 : trace / debug / info / warn / error / critical
 DEFINE_string(log_level, "info", "日志输出级别: trace/debug/info/warn/error/critical");
 
+// 网关服务名称
+DEFINE_string(server_name, "GatewayService", "网关服务名称");
+
 // 网关服务器监听地址
-DEFINE_string(gateway_address, "0.0.0.0", "网关服务器监听地址");
+DEFINE_string(server_addr, "0.0.0.0", "网关服务器监听地址");
 
 // 网关服务器监听端口
-DEFINE_int32(gateway_port, 8080, "网关服务器监听端口");
+DEFINE_int32(listen_port, 8080, "网关服务器监听端口");
 
 // 前端静态文件根目录, 网关将其挂载到站点根路径, 空字符串表示不托管静态文件
 DEFINE_string(www_root, "www", "前端静态文件根目录(相对或绝对路径), 空字符串表示不托管静态文件");
 
 // ETCD 注册中心地址
 DEFINE_string(etcd_address, "http://127.0.0.1:2379", "ETCD 注册中心地址");
-
-// 用户子服务名称
-DEFINE_string(user_service_name, "UserService", "用户子服务名称");
-
-// 文件子服务名称
-DEFINE_string(file_service_name, "FileService", "文件子服务名称");
-
-// 数据库子服务名称
-DEFINE_string(database_service_name, "DataBaseService", "数据库子服务名称");
-
-// AI 子服务名称
-DEFINE_string(ai_service_name, "AIService", "AI 子服务名称");
 
 namespace
 {
@@ -117,10 +112,10 @@ int main(int argc, char* argv[])
 
     // 4. 配置服务发现监控的子服务名称列表(用户、文件、数据库、AI 子服务)
     std::vector<std::string> care_service_names = {
-        FLAGS_user_service_name,
-        FLAGS_file_service_name,
-        FLAGS_database_service_name,
-        FLAGS_ai_service_name,
+        FLAGS_user_service,
+        FLAGS_file_service,
+        FLAGS_database_service,
+        FLAGS_ai_service,
     };
     INFO("服务发现配置完成, 监控服务: {} , {} , {} , {}",
          care_service_names[0], care_service_names[1], care_service_names[2], care_service_names[3]);
@@ -136,7 +131,7 @@ int main(int argc, char* argv[])
             .BuildHttpServer()
             .BindRoutes()
             .BuildStaticFiles(FLAGS_www_root)
-            .BuildGatewayServer(FLAGS_gateway_address, FLAGS_gateway_port)
+            .BuildGatewayServer(FLAGS_server_addr, FLAGS_listen_port)
             .StartServer();
     if (gateway_server == nullptr)
     {

@@ -15,6 +15,7 @@
 #include <excel_parse_service.pb.h>
 #include <file_service.pb.h>
 #include "common/exception.h"
+#include "common/service_flags.h"
 // FastDFS 客户端头文件必须最后导入 : 其依赖的 fastcommon 头文件会向全局作用域
 // 定义 byte 等宏, 先行导入会破坏 fmt/boost 等后续头文件的解析
 #include <cpp-toolkit/fdfs.h>
@@ -30,15 +31,6 @@ namespace ai_proto = ::chat_excel_proto::ai_service;
 
 namespace
 {
-
-// Excel 解析子服务名称, 用于从信道管理对象获取通信信道
-constexpr const char* kExcelParseServiceName = "ExcelParseService";
-
-// 数据库子服务名称, 用于从信道管理对象获取通信信道
-constexpr const char* kDatabaseServiceName = "DataBaseService";
-
-// AI 子服务名称, 用于从信道管理对象获取通信信道
-constexpr const char* kAiServiceName = "AIService";
 
 // Excel 数据库全局连接 ID, 数据库子服务启动时创建并登记该全局连接,
 // Excel 解析数据的保存与预览查询均通过该连接进行
@@ -127,11 +119,11 @@ std::vector<std::string> GetWorksheetNamesFromRpc(const cpp_toolkit::ChannelMana
                                                   const std::string& fastdfs_file_id)
 {
     // 通过信道管理对象获取 Excel 解析子服务通信信道
-    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(kExcelParseServiceName);
+    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(FLAGS_excel_parse_service);
     if (channel == nullptr)
     {
         ERR("获取 Excel 解析子服务信道失败, request_id: {}, 服务名称: {}",
-            request_id, kExcelParseServiceName);
+            request_id, FLAGS_excel_parse_service);
         throw ChatExcelException(ErrorCode::FILE_EXCEL_PARSE_RPC_ERROR);
     }
 
@@ -180,11 +172,11 @@ std::vector<proto::WorksheetData> ParseWorksheetsFromRpc(
     const std::string& fastdfs_file_id, const std::vector<std::string>& worksheet_names)
 {
     // 通过信道管理对象获取 Excel 解析子服务通信信道
-    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(kExcelParseServiceName);
+    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(FLAGS_excel_parse_service);
     if (channel == nullptr)
     {
         ERR("获取 Excel 解析子服务信道失败, request_id: {}, 服务名称: {}",
-            request_id, kExcelParseServiceName);
+            request_id, FLAGS_excel_parse_service);
         throw ChatExcelException(ErrorCode::FILE_EXCEL_PARSE_RPC_ERROR);
     }
 
@@ -241,11 +233,11 @@ void ImportWorksheetDataToDatabase(const cpp_toolkit::ChannelManager::Ptr& chann
                                    const proto::WorksheetData& worksheet_data)
 {
     // 通过信道管理对象获取数据库子服务通信信道
-    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(kDatabaseServiceName);
+    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(FLAGS_database_service);
     if (channel == nullptr)
     {
         ERR("获取数据库子服务信道失败, request_id: {}, 服务名称: {}",
-            request_id, kDatabaseServiceName);
+            request_id, FLAGS_database_service);
         throw ChatExcelException(ErrorCode::FILE_DATABASE_RPC_ERROR);
     }
 
@@ -299,11 +291,11 @@ db_proto::TableSchemaInfo GetTableDataFromDatabase(
     int page_size, bool force_original)
 {
     // 通过信道管理对象获取数据库子服务通信信道
-    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(kDatabaseServiceName);
+    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(FLAGS_database_service);
     if (channel == nullptr)
     {
         ERR("获取数据库子服务信道失败, request_id: {}, 服务名称: {}",
-            request_id, kDatabaseServiceName);
+            request_id, FLAGS_database_service);
         throw ChatExcelException(ErrorCode::FILE_DATABASE_RPC_ERROR);
     }
 
@@ -358,10 +350,10 @@ void UpdateSessionFileFromRpc(const cpp_toolkit::ChannelManager::Ptr& channel_ma
                               const std::string& chat_session_id, const std::string& file_id)
 {
     // 通过信道管理对象获取 AI 子服务通信信道
-    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(kAiServiceName);
+    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(FLAGS_ai_service);
     if (channel == nullptr)
     {
-        ERR("获取 AI 子服务信道失败, request_id: {}, 服务名称: {}", request_id, kAiServiceName);
+        ERR("获取 AI 子服务信道失败, request_id: {}, 服务名称: {}", request_id, FLAGS_ai_service);
         throw ChatExcelException(ErrorCode::FILE_AI_RPC_ERROR);
     }
 
@@ -419,11 +411,11 @@ void DropTableExcelFromRpc(const cpp_toolkit::ChannelManager::Ptr& channel_manag
     }
 
     // 通过信道管理对象获取数据库子服务通信信道
-    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(kDatabaseServiceName);
+    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(FLAGS_database_service);
     if (channel == nullptr)
     {
         ERR("获取数据库子服务信道失败, request_id: {}, 服务名称: {}",
-            request_id, kDatabaseServiceName);
+            request_id, FLAGS_database_service);
         return;
     }
 
@@ -481,10 +473,10 @@ void DeleteChatSessionsByFileFromRpc(const cpp_toolkit::ChannelManager::Ptr& cha
                                      const std::string& file_id)
 {
     // 通过信道管理对象获取 AI 子服务通信信道
-    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(kAiServiceName);
+    cpp_toolkit::ChannelPtr channel = channel_manager->GetChannel(FLAGS_ai_service);
     if (channel == nullptr)
     {
-        ERR("获取 AI 子服务信道失败, request_id: {}, 服务名称: {}", request_id, kAiServiceName);
+        ERR("获取 AI 子服务信道失败, request_id: {}, 服务名称: {}", request_id, FLAGS_ai_service);
         throw ChatExcelException(ErrorCode::FILE_AI_RPC_ERROR);
     }
 

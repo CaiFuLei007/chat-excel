@@ -19,6 +19,7 @@
 #include <notify_service.pb.h>
 #include <user_service.pb.h>
 #include "common/exception.h"
+#include "common/service_flags.h"
 #include "svc_ai_service/prompt_template.h"
 
 namespace chat_excel
@@ -35,12 +36,6 @@ namespace notify_proto = ::chat_excel_proto::notify_service;
 
 namespace
 {
-
-// 子服务名称, 用于从信道管理对象获取通信信道
-constexpr const char* kFileServiceName = "FileService";
-constexpr const char* kDatabaseServiceName = "DataBaseService";
-constexpr const char* kUserServiceName = "UserService";
-constexpr const char* kNotifyServiceName = "NotifyService";
 
 // 轻量 RPC 调用超时时间(毫秒) : 元数据收集/SQL 执行/邮箱查询均为轻量操作, 设置 3 秒
 constexpr int kLightRpcTimeoutMs = 3 * 1000;
@@ -736,11 +731,11 @@ std::vector<std::string> AIMessageHandler::GetTableNames(const SendMessageContex
         throw ChatExcelException(ErrorCode::AI_SERVICE_FILE_ID_EMPTY);
     }
 
-    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(kFileServiceName);
+    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(FLAGS_file_service);
     if (channel == nullptr)
     {
         ERR("获取文件子服务信道失败, request_id: {}, 服务名称: {}",
-            context.request_id, kFileServiceName);
+            context.request_id, FLAGS_file_service);
         throw ChatExcelException(ErrorCode::AI_FILE_RPC_ERROR);
     }
 
@@ -783,11 +778,11 @@ void AIMessageHandler::CollectTableMetadata(const SendMessageContext& context,
     {
         const std::string& table_name = table_names[i];
 
-        cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(kDatabaseServiceName);
+        cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(FLAGS_database_service);
         if (channel == nullptr)
         {
             ERR("获取数据库子服务信道失败, request_id: {}, 服务名称: {}",
-                context.request_id, kDatabaseServiceName);
+                context.request_id, FLAGS_database_service);
             throw ChatExcelException(ErrorCode::AI_DATABASE_RPC_ERROR);
         }
 
@@ -884,11 +879,11 @@ std::string AIMessageHandler::ExecuteSql(const SendMessageContext& context, cons
                                          std::vector<std::string>& column_types,
                                          std::vector<std::vector<std::string>>& rows)
 {
-    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(kDatabaseServiceName);
+    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(FLAGS_database_service);
     if (channel == nullptr)
     {
         ERR("获取数据库子服务信道失败, request_id: {}, 服务名称: {}",
-            context.request_id, kDatabaseServiceName);
+            context.request_id, FLAGS_database_service);
         throw ChatExcelException(ErrorCode::AI_DATABASE_RPC_ERROR);
     }
 
@@ -1086,11 +1081,11 @@ void AIMessageHandler::CleanupRoundIntermediateMessages(const std::string& reque
 
 std::string AIMessageHandler::GetUserEmail(const SendMessageContext& context)
 {
-    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(kUserServiceName);
+    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(FLAGS_user_service);
     if (channel == nullptr)
     {
         ERR("获取用户子服务信道失败, request_id: {}, 服务名称: {}",
-            context.request_id, kUserServiceName);
+            context.request_id, FLAGS_user_service);
         throw ChatExcelException(ErrorCode::AI_USER_RPC_ERROR);
     }
 
@@ -1236,11 +1231,11 @@ void AIMessageHandler::SendEmailByNotifyService(const SendMessageContext& contex
                                                 const std::string& to_email,
                                                 const std::string& subject, const std::string& content)
 {
-    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(kNotifyServiceName);
+    cpp_toolkit::ChannelPtr channel = channel_manager_->GetChannel(FLAGS_notify_service);
     if (channel == nullptr)
     {
         ERR("获取通知子服务信道失败, request_id: {}, 服务名称: {}",
-            context.request_id, kNotifyServiceName);
+            context.request_id, FLAGS_notify_service);
         throw ChatExcelException(ErrorCode::AI_NOTIFY_RPC_ERROR);
     }
 
