@@ -161,8 +161,10 @@ int main(int argc, char* argv[])
     INFO("MySQL 配置组装完成, 地址: {} , 端口: {} , 数据库: {}",
          FLAGS_mysql_host, FLAGS_mysql_port, FLAGS_mysql_database);
 
-    // 6. 解析需要监控的子服务名称列表(数据库子服务依赖文件子服务下载 SQLite 文件)
-    std::vector<std::string> care_service_names = SplitCommaSeparated(FLAGS_care_service_names);
+    // 6. 配置需要监控的子服务名称列表(数据库子服务依赖文件子服务下载 SQLite 文件, 硬编码)
+    std::vector<std::string> care_service_names = {
+        "FileService",
+    };
     INFO("服务发现配置完成, 监控服务数量: {}", care_service_names.size());
 
     // 7. 组装 FastDFS 客户端配置(SQLite 连接业务层下载文件依赖)

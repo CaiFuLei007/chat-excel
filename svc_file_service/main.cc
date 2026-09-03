@@ -75,12 +75,6 @@ DEFINE_string(server_name, "FileService", "文件子服务名称");
 // 文件子服务注册地址(须与 host:listen_port 一致, 客户端可访问)
 DEFINE_string(server_addr, "127.0.0.1:8084", "文件子服务注册地址");
 
-// 需要监控的子服务名称列表(逗号分隔), Excel 解析子服务负责 Excel 文件解析,
-// 数据库子服务负责 Excel 数据的保存与预览查询,
-// AI 子服务提供会话文件映射表更新接口(文件上传/删除时调用)
-DEFINE_string(care_service_names, "ExcelParseService,DataBaseService,AIService",
-              "需要监控的子服务名称列表(逗号分隔)");
-
 // 服务注册 TTL(秒)
 DEFINE_int32(registry_ttl, 10, "服务注册 TTL(秒)");
 
@@ -206,8 +200,13 @@ int main(int argc, char* argv[])
     INFO("ETCD 注册中心配置组装完成, 地址: {} , 服务: {} -> {}",
          FLAGS_etcd_address, FLAGS_server_name, FLAGS_server_addr);
 
-    // 7. 解析需要监控的子服务名称列表
-    std::vector<std::string> care_service_names = SplitCommaSeparated(FLAGS_care_service_names);
+    // 7. 配置需要监控的子服务名称列表(文件子服务依赖 Excel 解析/数据库/AI,
+    //    Excel 负责解析、数据库负责数据保存与预览、AI 提供文件映射更新接口, 硬编码)
+    std::vector<std::string> care_service_names = {
+        "ExcelParseService",
+        "DataBaseService",
+        "AIService",
+    };
     INFO("服务发现配置完成, 监控服务数量: {}", care_service_names.size());
 
     // 8. 链式构建文件子服务服务器

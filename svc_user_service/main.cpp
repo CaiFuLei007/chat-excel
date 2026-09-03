@@ -184,8 +184,11 @@ int main(int argc, char* argv[])
     redis_settings->pool_connections_size = FLAGS_redis_pool_connections_size;
     INFO("Redis 配置组装完成, 地址: {} , 端口: {}", FLAGS_redis_host, FLAGS_redis_port);
 
-    // 5. 解析需要监控的子服务名称列表
-    std::vector<std::string> care_service_names = SplitCommaSeparated(FLAGS_care_service_names);
+    // 5. 配置需要监控的子服务名称列表(用户子服务依赖通知与数据库子服务, 硬编码)
+    std::vector<std::string> care_service_names = {
+        "NotifyService",
+        "DataBaseService",
+    };
     INFO("服务发现配置完成, 监控服务数量: {}", care_service_names.size());
 
     // 6. 链式构建用户子服务服务器
