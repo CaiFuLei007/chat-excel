@@ -165,13 +165,23 @@ TEST_F(ExcelParseTest, FloatColumnDetectedAsDouble)
     EXPECT_EQ(worksheet_data.columns[0].type, "DOUBLE");
 }
 
-// 正常情况 : 日期列(多种格式)判定为 DATE
+// 正常情况 : 纯 ISO 规范日期列判定为 DATE
 TEST_F(ExcelParseTest, DateColumnDetectedAsDate)
+{
+    CreateTestExcel({"created"}, {{"2024-01-15"}, {"2024-02-16"}, {"2024-03-17"}});
+
+    WorksheetData worksheet_data = excel_parse_.ParseWorksheet(kTestExcelPath, "Sheet1");
+    EXPECT_EQ(worksheet_data.columns[0].type, "DATE");
+}
+
+// 边界情况 : 列中存在非 ISO 规范日期(斜杠/点分隔/美式日期)时整列判定为 TEXT,
+//            避免 MySQL 无法统一解析的日期格式导致插入失败
+TEST_F(ExcelParseTest, NonIsoDateFormatColumnFallsBackToText)
 {
     CreateTestExcel({"created"}, {{"2024-01-15"}, {"2024/02/16"}, {"02-17-2024"}, {"2024.02.18"}});
 
     WorksheetData worksheet_data = excel_parse_.ParseWorksheet(kTestExcelPath, "Sheet1");
-    EXPECT_EQ(worksheet_data.columns[0].type, "DATE");
+    EXPECT_EQ(worksheet_data.columns[0].type, "TEXT");
 }
 
 // 正常情况 : 日期时间格式 yyyy-mm-dd-HH:MM:SS 判定为 DATE
@@ -214,6 +224,71 @@ TEST_F(ExcelParseTest, NaCellSkippedInColumnDetection)
 TEST_F(ExcelParseTest, MixedColumnResolvedByMajority)
 {
     CreateTestExcel({"mixed"}, {{"true"}, {"false"}, {"hello"}, {"text2"}, {"more"}});
+
+    WorksheetData worksheet_data = excel_parse_.ParseWorksheet(kTestExcelPath, "Sheet1");
+    EXPECT_EQ(worksheet_data.columns[0].type, "TEXT");
+}
+
+// 边界情况 : 数值占多数但存在文本单元格的列(如考试地点混有文字)整列判定为 TEXT,
+//            避免文本行插入数值列时 MySQL 类型转换失败导致整批导入回滚
+TEST_F(ExcelParseTest, ColumnWithAnyTextFallsBackToText)
+{
+    CreateTestExcel({"place"}, {{"101"}, {"102"}, {"103"}, {"104"}, {"105"},
+                     {"东区教学楼"}});
+
+    WorksheetData worksheet_data = excel_parse_.ParseWorksheet(kTestExcelPath, "Sheet1");
+    EXPECT_EQ(worksheet_data.columns[0].type, "TEXT");
+}
+
+// 边界情况 : 列类型判定遍历全部数据行, 前 100 行之后的文本行不会被漏检
+TEST_F(ExcelParseTest, TypeDetectionCoversAllRows)
+{
+    std::vector<std::vector<std::string>> rows;
+    rows.reserve(152);
+    for (int i = 1; i <= 150; ++i)
+    {
+        rows.push_back({std::to_string(i)});
+    }
+    rows.push_back({"补考地点: 6号教学楼101"});
+    CreateTestExcel({"place"}, rows);
+
+    WorksheetData worksheet_data = excel_parse_.ParseWorksheet(kTestExcelPath, "Sheet1");
+    EXPECT_EQ(worksheet_data.columns[0].type, "TEXT");
+}
+
+// 边界情况 : 前导零数字列(学号/序号类编码)按文本存储, 避免入库丢失前导零
+TEST_F(ExcelParseTest, LeadingZeroIntegerColumnFallsBackToText)
+{
+    CreateTestExcel({"student_no"}, {{"0012"}, {"0023"}, {"0045"}});
+
+    WorksheetData worksheet_data = excel_parse_.ParseWorksheet(kTestExcelPath, "Sheet1");
+    EXPECT_EQ(worksheet_data.columns[0].type, "TEXT");
+    // 文本列原样保留前导零
+    EXPECT_EQ(worksheet_data.rows[0][0].value, "0012");
+}
+
+// 边界情况 : 超出 int64 范围的大整数按文本存储, 避免 BIGINT 溢出
+TEST_F(ExcelParseTest, OversizedIntegerColumnFallsBackToText)
+{
+    CreateTestExcel({"big"}, {{"9223372036854775807"}, {"99999999999999999999"}});
+
+    WorksheetData worksheet_data = excel_parse_.ParseWorksheet(kTestExcelPath, "Sheet1");
+    EXPECT_EQ(worksheet_data.columns[0].type, "TEXT");
+}
+
+// 边界情况 : 布尔与整数混排的列按文本存储(无法用单一布尔/数值列无损容纳)
+TEST_F(ExcelParseTest, BoolAndIntegerMixedColumnFallsBackToText)
+{
+    CreateTestExcel({"flag"}, {{"true"}, {"42"}});
+
+    WorksheetData worksheet_data = excel_parse_.ParseWorksheet(kTestExcelPath, "Sheet1");
+    EXPECT_EQ(worksheet_data.columns[0].type, "TEXT");
+}
+
+// 边界情况 : 千分位/全角数字等带格式数字文本按文本存储(需数值语义时由入库侧规范化)
+TEST_F(ExcelParseTest, FormattedNumberTextKeptAsText)
+{
+    CreateTestExcel({"amount"}, {{"1,234"}, {"\uFF15\uFF16\uFF17\uFF18"}});
 
     WorksheetData worksheet_data = excel_parse_.ParseWorksheet(kTestExcelPath, "Sheet1");
     EXPECT_EQ(worksheet_data.columns[0].type, "TEXT");

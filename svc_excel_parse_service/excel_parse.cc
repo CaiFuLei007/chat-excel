@@ -21,9 +21,6 @@ namespace excel_parse_service
 namespace
 {
 
-// 列类型采样行数(前 100 行数据)
-constexpr int kSampleRowCount = 100;
-
 // N/A 单元格文本标识(统一转为小写后比较, 不参与列类型统计)
 constexpr const char* kNaCellText = "n/a";
 
@@ -359,142 +356,334 @@ std::string SanitizeColumnName(const std::string& raw_name, uint16_t column_numb
 }
 
 /**
- * @brief 对单个采样单元格进行类型投票, 空/N/A 单元格不统计;
- *        原生类型直接归类, 文本类型按检测规则判定
- * @param proxy 单元格值代理对象
- * @param counter 该列的类型票数统计容器
+ * @brief 判断数字文本(可带 +/- 号)的符号与纯数字部分
+ * @param text 已去除前后空白的文本
+ * @param negative 输出是否为负数
+ * @param digits 输出的纯数字部分(保留前导零)
+ * @return 文本为合法数字串返回 true, 否则返回 false
  */
-void CountSampleCellVote(const OpenXLSX::XLCellValueProxy& proxy,
-                         std::unordered_map<CellType, int>& counter)
+bool SplitSignedNumberText(const std::string& text, bool& negative, std::string& digits)
 {
-    switch (proxy.type())
+    negative = false;
+    digits.clear();
+    size_t pos = 0;
+    if (pos < text.size() && (text[pos] == '+' || text[pos] == '-'))
     {
-    case OpenXLSX::XLValueType::Empty:
-        return;
-    case OpenXLSX::XLValueType::Boolean:
-        ++counter[CellType::BOOLEAN];
-        return;
-    case OpenXLSX::XLValueType::Integer:
-        ++counter[CellType::INTEGER];
-        return;
-    case OpenXLSX::XLValueType::Float:
-        ++counter[CellType::FLOAT];
-        return;
-    default:
-        break;
+        negative = text[pos] == '-';
+        ++pos;
     }
+    bool has_digit = false;
+    for (; pos < text.size(); ++pos)
+    {
+        if (!std::isdigit(static_cast<unsigned char>(text[pos])))
+        {
+            return false;
+        }
+        digits.push_back(text[pos]);
+        has_digit = true;
+    }
+    return has_digit;
+}
 
-    // 文本/Error 单元格 : 去除前后空白, 空或 N/A 不统计
-    std::string text = TrimWhitespace(SafeGetCellText(proxy));
+/**
+ * @brief 去掉纯数字串的前导零(全零时保留一个 0)
+ * @param digits 纯数字串
+ * @return 去除前导零后的数字串
+ */
+std::string StripLeadingZeros(const std::string& digits)
+{
+    size_t start = 0;
+    while (start + 1 < digits.size() && digits[start] == '0')
+    {
+        ++start;
+    }
+    return digits.substr(start);
+}
+
+/**
+ * @brief 判断整型数字文本是否带前导零(如 "0012", 学号/序号类编码)。
+ *        带前导零的数字写入数值列会丢失前导零, 此类列应整列按文本存储
+ * @param text 已去除前后空白的整型数字文本
+ * @return 带前导零返回 true, 否则返回 false
+ */
+bool HasLeadingZeroDigits(const std::string& text)
+{
+    bool negative = false;
+    std::string digits;
+    if (!SplitSignedNumberText(text, negative, digits))
+    {
+        return false;
+    }
+    return StripLeadingZeros(digits).size() < digits.size();
+}
+
+/**
+ * @brief 判断整型数字文本是否在 int64 范围内(可安全存入 BIGINT)
+ * @param text 已去除前后空白的整型数字文本
+ * @return 在范围内返回 true, 否则返回 false
+ */
+bool IsInt64SafeText(const std::string& text)
+{
+    bool negative = false;
+    std::string digits;
+    if (!SplitSignedNumberText(text, negative, digits))
+    {
+        return false;
+    }
+    digits = StripLeadingZeros(digits);
+    // int64 范围: [-9223372036854775808, 9223372036854775807], 均为 19 位数字
+    const std::string bound = negative ? "9223372036854775808" : "9223372036854775807";
+    if (digits.size() < 19)
+    {
+        return true;
+    }
+    if (digits.size() > 19)
+    {
+        return false;
+    }
+    // 同位数纯数字串可直接按字典序比较
+    return digits <= bound;
+}
+
+/**
+ * @brief 判断整型数字文本的绝对值是否在 double 可精确表示范围内(±2^53),
+ *        超出该范围的整数与浮点混排时不能无损存入 DOUBLE
+ * @param text 已去除前后空白的整型数字文本
+ * @return 可精确表示返回 true, 否则返回 false
+ */
+bool IsDoubleSafeIntText(const std::string& text)
+{
+    bool negative = false;
+    std::string digits;
+    if (!SplitSignedNumberText(text, negative, digits))
+    {
+        return false;
+    }
+    digits = StripLeadingZeros(digits);
+    // 2^53 = 9007199254740992(16 位数字)
+    const std::string bound = "9007199254740992";
+    if (digits.size() < 16)
+    {
+        return true;
+    }
+    if (digits.size() > 16)
+    {
+        return false;
+    }
+    return digits <= bound;
+}
+
+// ISO 规范日期(可含时间部分) : yyyy-mm-dd 或 yyyy-mm-dd-HH:MM:SS
+const std::regex kIsoDatePattern(
+    R"(^(\d{4})-(\d{2})-(\d{2})(-(\d{2}):(\d{2}):(\d{2}))?$)");
+
+/**
+ * @brief 判断是否为 MySQL 可直接解析的 ISO 规范日期(yyyy-mm-dd, 可选 -HH:MM:SS)。
+ *        IsDateText 能识别的其余格式(斜杠/点分隔/美式日期等)不能保证 MySQL 正确解析,
+ *        含此类日期的列统一按文本存储
+ * @param text 已去除前后空白的日期文本
+ * @return 是 ISO 规范日期返回 true
+ */
+bool IsIsoDateText(const std::string& text)
+{
+    return std::regex_match(text, kIsoDatePattern);
+}
+
+/**
+ * @brief 列类型证据 : 记录整列逐格扫描后出现的全部内容类别。
+ *        列类型决策只依赖"是否出现某类内容", 与出现次数无关(全列验证保证不丢数据)
+ */
+struct ColumnTypeEvidence
+{
+    bool has_value = false;                // 是否存在有效(非空/N/A)单元格
+    bool has_bool = false;                 // 是否存在布尔内容
+    bool has_int = false;                  // 是否存在可安全存入 BIGINT 的整数
+    bool has_high_precision_int = false;   // 是否存在超过 double 精确范围的整数(与浮点混排时生效)
+    bool has_float = false;                // 是否存在浮点内容
+    bool has_iso_date = false;             // 是否存在 ISO 规范日期
+    bool has_loose_date = false;           // 是否存在非 ISO 规范日期文本
+    bool has_text = false;                 // 是否存在无法归类的文本或需保格式的内容
+};
+
+/**
+ * @brief 将单个数据单元格计入列类型证据
+ * @param evidence 列类型证据
+ * @param cell 单元格数据(值与类型, 由 ParseOneCell 产出)
+ */
+void AccountColumnCell(ColumnTypeEvidence& evidence, const CellData& cell)
+{
+    if (cell.type == CellType::EMPTY)
+    {
+        return;
+    }
+    const std::string text = TrimWhitespace(cell.value);
     if (text.empty() || ToLowerAscii(text) == kNaCellText)
     {
         return;
     }
-    ++counter[DetectTextCellType(text)];
+    evidence.has_value = true;
+
+    // Excel 原生类型直接归类(原生整型/浮点/布尔值一定是规范表示)
+    if (cell.type == CellType::BOOLEAN)
+    {
+        evidence.has_bool = true;
+        return;
+    }
+    if (cell.type == CellType::INTEGER)
+    {
+        evidence.has_int = true;
+        return;
+    }
+    if (cell.type == CellType::FLOAT)
+    {
+        evidence.has_float = true;
+        return;
+    }
+
+    // 文本内容复用文本识别规则二次归类
+    switch (DetectTextCellType(text))
+    {
+    case CellType::BOOLEAN:
+        evidence.has_bool = true;
+        break;
+    case CellType::INTEGER:
+        // 前导零(学号/序号等)与超 int64 范围的整数无法无损存入数值列, 整列按文本处理
+        if (HasLeadingZeroDigits(text) || !IsInt64SafeText(text))
+        {
+            evidence.has_text = true;
+        }
+        else
+        {
+            evidence.has_int = true;
+            if (!IsDoubleSafeIntText(text))
+            {
+                evidence.has_high_precision_int = true;
+            }
+        }
+        break;
+    case CellType::FLOAT:
+        evidence.has_float = true;
+        break;
+    case CellType::DATE:
+        if (IsIsoDateText(text))
+        {
+            evidence.has_iso_date = true;
+        }
+        else
+        {
+            evidence.has_loose_date = true;
+        }
+        break;
+    default:
+        // STRING : 数字+文字混合、千分位/全角数字等一律按文本保底
+        evidence.has_text = true;
+        break;
+    }
 }
 
 /**
- * @brief 将列类型映射为数据库列类型 :
- *        INTEGER -> BIGINT , FLOAT -> DOUBLE ,
- *        BOOLEAN -> BOOLEAN , DATE -> DATE , 其余 -> TEXT
- * @param cell_type 单元格类型
+ * @brief 根据整列逐格扫描得到的列类型证据确定数据库列类型(TEXT/BIGINT/DOUBLE/BOOLEAN/DATE)。
+ *        核心原则 : 列类型必须能无损容纳该列全部单元格, 任一单元格放不下即整列降级为 TEXT,
+ *        保证导入时不会因单元格与列类型冲突导致整批回滚(表现为"有表结构但无数据")
+ * @param evidence 列类型证据
  * @return 数据库列类型字符串
  */
-std::string MapColumnType(CellType cell_type)
+std::string DecideColumnType(const ColumnTypeEvidence& evidence)
 {
-    switch (cell_type)
+    // 无有效单元格(全空/N/A)默认 TEXT
+    if (!evidence.has_value)
     {
-    case CellType::INTEGER:
-        return "BIGINT";
-    case CellType::FLOAT:
-        return "DOUBLE";
-    case CellType::BOOLEAN:
-        return "BOOLEAN";
-    case CellType::DATE:
-        return "DATE";
-    default:
         return "TEXT";
     }
-}
-
-/**
- * @brief 根据某列的类型票数统计结果确定该列的数据库列类型,
- *        取票数最多的类型, 同票按 整型 > 浮点 > 布尔 > 日期 > 字符串 的优先级取舍,
- *        无任何有效样本时默认 TEXT
- * @param counter 该列的类型票数统计容器
- * @return 数据库列类型字符串
- */
-std::string ResolveColumnType(const std::unordered_map<CellType, int>& counter)
-{
-    // 固定优先级顺序
-    const std::vector<CellType> kPriorityOrder = {CellType::INTEGER, CellType::FLOAT,
-                                                  CellType::BOOLEAN, CellType::DATE,
-                                                  CellType::STRING};
-    CellType winner_type = CellType::STRING;
-    int winner_count = 0;
-    for (CellType candidate_type : kPriorityOrder)
+    // 存在任意文本/需保格式内容, 或存在非 ISO 规范日期 -> TEXT
+    if (evidence.has_text || evidence.has_loose_date)
     {
-        auto iter = counter.find(candidate_type);
-        if (iter == counter.end())
-        {
-            continue;
-        }
-        if (iter->second > winner_count)
-        {
-            winner_count = iter->second;
-            winner_type = candidate_type;
-        }
+        return "TEXT";
     }
-    return MapColumnType(winner_type);
+    // 超 double 精确范围的大整数与浮点混排时无法无损存储 -> TEXT
+    if (evidence.has_high_precision_int && evidence.has_float)
+    {
+        return "TEXT";
+    }
+    // 日期与其他类别混排 -> TEXT(语义冲突); 纯 ISO 日期 -> DATE
+    if (evidence.has_iso_date)
+    {
+        if (evidence.has_bool || evidence.has_int || evidence.has_float)
+        {
+            return "TEXT";
+        }
+        return "DATE";
+    }
+    // 布尔与数值混排 -> TEXT; 纯布尔 -> BOOLEAN
+    if (evidence.has_bool)
+    {
+        if (evidence.has_int || evidence.has_float)
+        {
+            return "TEXT";
+        }
+        return "BOOLEAN";
+    }
+    // 整数与浮点混排 -> DOUBLE(无损容纳全部数值)
+    if (evidence.has_int && evidence.has_float)
+    {
+        return "DOUBLE";
+    }
+    if (evidence.has_int)
+    {
+        return "BIGINT";
+    }
+    if (evidence.has_float)
+    {
+        return "DOUBLE";
+    }
+    return "TEXT";
 }
 
 /**
- * @brief 解析 worksheet 的表头列信息并采样数据行完成列类型判定,
- *        第一行作为表头行, 采样范围为表头行之后的前 100 行数据,
- *        全空列默认 TEXT
+ * @brief 解析 worksheet 第一行(表头行)生成列信息 : 列名清洗后填充,
+ *        列类型暂为 TEXT, 待数据行解析完成后由 FillColumnTypes 依据整列内容最终确定
  * @param worksheet 工作表对象
- * @param row_count 总行数
  * @param column_count 总列数
- * @return 表头列信息列表(已填充列类型)
+ * @return 表头列信息列表
  */
-std::vector<ColumnInfo> ParseHeaderColumns(const OpenXLSX::XLWorksheet& worksheet,
-                                           uint32_t row_count, uint16_t column_count)
+std::vector<ColumnInfo> ParseColumnHeaders(const OpenXLSX::XLWorksheet& worksheet,
+                                           uint16_t column_count)
 {
     std::vector<ColumnInfo> columns;
     columns.reserve(column_count);
-
-    // 每列独立的类型票数统计容器
-    std::vector<std::unordered_map<CellType, int>> vote_counters(column_count);
-
-    // 采样行数 : 排除表头行, 最多采样前 100 行数据
-    uint64_t sample_row_count = static_cast<uint64_t>(row_count) - 1;
-    if (sample_row_count > kSampleRowCount)
-    {
-        sample_row_count = kSampleRowCount;
-    }
-
-    // 外层遍历采样行(第一行数据从第 2 行开始), 内层逐列统计该行每个单元格的类型票数
-    for (uint32_t row_offset = 0; row_offset < sample_row_count; ++row_offset)
-    {
-        uint32_t row_number = row_offset + 2;
-        for (uint16_t column_number = 1; column_number <= column_count; ++column_number)
-        {
-            CountSampleCellVote(worksheet.cell(row_number, column_number).value(),
-                                vote_counters[column_number - 1]);
-        }
-    }
-
-    // 解析表头列名并确定各列数据库列类型
     for (uint16_t column_number = 1; column_number <= column_count; ++column_number)
     {
         ColumnInfo column_info;
         column_info.name = SanitizeColumnName(
             CellValueToString(worksheet.cell(1, column_number).value()), column_number);
-        column_info.type = ResolveColumnType(vote_counters[column_number - 1]);
+        column_info.type = "TEXT";
         columns.push_back(std::move(column_info));
     }
     return columns;
 }
+
+/**
+ * @brief 依据全部数据行逐格验证各列内容, 填充各列的最终数据库列类型
+ * @param columns 表头列信息(由 ParseColumnHeaders 产出, 已含列名)
+ * @param rows 全部数据行(由 ParseDataRows 产出)
+ */
+void FillColumnTypes(std::vector<ColumnInfo>& columns,
+                     const std::vector<std::vector<CellData>>& rows)
+{
+    for (size_t column_index = 0; column_index < columns.size(); ++column_index)
+    {
+        ColumnTypeEvidence evidence;
+        for (const std::vector<CellData>& row : rows)
+        {
+            if (column_index < row.size())
+            {
+                AccountColumnCell(evidence, row[column_index]);
+            }
+        }
+        columns[column_index].type = DecideColumnType(evidence);
+    }
+}
+
 
 /**
  * @brief 解析单个数据单元格 : 值与类型的转换规则见 CellData 定义,
@@ -625,8 +814,10 @@ WorksheetData ExcelParse::ParseWorksheet(const std::string& file_path,
 
         result.total_rows = static_cast<int>(row_count);
         result.total_cols = static_cast<int>(column_count);
-        result.columns = ParseHeaderColumns(worksheet, row_count, column_count);
+        result.columns = ParseColumnHeaders(worksheet, column_count);
         result.rows = ParseDataRows(worksheet, row_count, column_count);
+        // 列类型须覆盖整列全部单元格(全列验证), 避免少数异常单元格导致整批导入回滚
+        FillColumnTypes(result.columns, result.rows);
         INFO("解析 worksheet 完成, file_path: {} , worksheet_name: {} , 行数: {} , 列数: {}",
              file_path, worksheet_name, result.total_rows, result.total_cols);
         return result;
