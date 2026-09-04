@@ -1043,8 +1043,22 @@ void AIMessageHandler::UpdateSessionMetadata(const std::string& request_id, Chat
         const std::string& title = model_title.empty() ? user_message : model_title;
         session_info.title = TruncateUtf8(title, kSessionTitleMaxChars);
     }
-    session_info.total_message_count += 1;
     session_info.update_time = static_cast<unsigned long long>(time(nullptr));
+
+    // 消息总数改为按 ChatSDK 实际落库消息统计(user + assistant), 不再每轮固定 +1:
+    // 每轮对话 ChatSDK 中会落库用户原话与助手最终消息两条, 固定 +1 导致历史会话列表
+    // 展示的"N 条消息"仅为实际消息数的一半; 按实际条数重算保证计数与历史消息一致。
+    const std::shared_ptr<aichat_sdk::Session> message_session =
+        ai_chat_sdk_->GetSession(session_info.chat_session_id);
+    if (message_session != nullptr)
+    {
+        session_info.total_message_count = message_session->messages.size();
+    }
+    else
+    {
+        // 会话对象异常缺失时回退为原递增逻辑, 避免消息计数不更新
+        session_info.total_message_count += 1;
+    }
 
     // 写策略 Cache-Aside : 先更新 MySQL, 再删除缓存
     chat_session_manager_->SaveOrUpdateChatSession(session_info);
