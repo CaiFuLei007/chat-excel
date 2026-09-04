@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='120' height='120' fill='none' stroke='%236366f1' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M3 9h18M9 3v18'/%3E%3Cpath d='m13 13 2 2 3.5-3.5'/%3E%3C/svg%3E" alt="ChatExcel Logo"/>
+<img src="docs/images/chat-excel-logo.svg" alt="ChatExcel Logo" width="120" height="120"/>
 
 # ChatExcel
 
@@ -88,10 +88,10 @@ ChatExcel 将 **LLM（大语言模型）** 与 **数据分析** 深度结合：�
 - **控制台**：文件上传、Excel 预览、数据库连接、流式对话与 ECharts 图表渲染。
 
 
-![Excel助手1](https://note-1339265474.cos.ap-guangzhou.myqcloud.com/sandox/pic/20260904134119821.png)
-![Excel助手2](https://note-1339265474.cos.ap-guangzhou.myqcloud.com/sandox/pic/20260904134554283.png)
-![数据库助手1](https://note-1339265474.cos.ap-guangzhou.myqcloud.com/sandox/pic/20260904134256366.png)
-![数据库助手2](https://note-1339265474.cos.ap-guangzhou.myqcloud.com/sandox/pic/20260904134642447.png)
+![Excel助手1](docs/images/excel-assistant-1.png)
+![Excel助手2](docs/images/excel-assistant-2.png)
+![数据库助手1](docs/images/database-assistant-1.png)
+![数据库助手2](docs/images/database-assistant-2.png)
 
 
 ---
@@ -349,53 +349,61 @@ curl -N -X POST http://localhost:8000/api/ai/sendStreamMessage \
 ---
 
 ## 🏛️ 项目架构（Architecture）
-
 ```mermaid
 flowchart TB
-    Browser["🌐 浏览器<br/>(内置 Web 前端)"]
+    Browser["浏览器(内置 Web 前端)"]
 
     subgraph Gateway["网关服务 GatewayService :8000"]
-        GW["cpp-httplib HTTP 服务器<br/>鉴权 · 协议转换 · 负载均衡 · 静态托管"]
+        GW["HTTP 服务器(鉴权 / 协议转换 / 负载均衡 / 静态托管)"]
     end
 
     subgraph Services["brpc 微服务集群"]
-        USR["用户服务<br/>:8001"]
-        FILE["文件服务<br/>:8004"]
-        EXCEL["Excel 解析服务<br/>:8003"]
-        DB["数据库服务<br/>:8005"]
-        AI["AI 服务<br/>:8006"]
-        NOTIFY["邮件通知服务<br/>:8002"]
+        USR["用户服务 :8001"]
+        FILE["文件服务 :8004"]
+        EXCEL["Excel 解析服务 :8003"]
+        DB["数据库服务 :8005"]
+        AI["AI 服务 :8006"]
+        NOTIFY["邮件通知服务 :8002"]
     end
 
     subgraph MW["中间件"]
-        ETCD["etcd<br/>注册中心"]
-        MYSQL[("MySQL<br/>ODB ORM")]
-        REDIS[("Redis<br/>验证码 / 缓存")]
-        FDFS["FastDFS<br/>文件存储"]
+        ETCD["etcd 注册中心"]
+        MYSQL["MySQL(ODB ORM)"]
+        REDIS["Redis(验证码 / 缓存)"]
+        FDFS["FastDFS 文件存储"]
     end
 
-    LLM["☁️ LLM<br/>deepseek · gpt-4o-mini · gemini"]
+    LLM["LLM: deepseek / gpt-4o-mini / gemini"]
 
-    Browser -->|HTTP / SSE| GW
-    GW <-->|brpc| USR
-    GW <-->|brpc| FILE
-    GW <-->|brpc| DB
-    GW <-->|brpc| AI
-    FILE -->|brpc| EXCEL
-    FILE -->|brpc| DB
-    AI -->|brpc| DB
-    AI -->|brpc| NOTIFY
-    NOTIFY -->|SMTP| Browser
-
-    Services -.->|服务注册 / 发现| ETCD
+    Browser --> GW
+    GW --> USR
+    GW --> FILE
+    GW --> DB
+    GW --> AI
+    FILE --> EXCEL
+    FILE --> DB
+    AI --> DB
+    AI --> NOTIFY
+    AI --> LLM
+    NOTIFY --> Browser
     USR --> MYSQL
     USR --> REDIS
     FILE --> MYSQL
     FILE --> FDFS
     DB --> MYSQL
     AI --> MYSQL
-    AI <-->|HTTPS| LLM
+    Services --> ETCD
 ```
+
+**图例（连线说明）**：
+
+- 浏览器 → 网关：HTTP / SSE（登录、上传、流式对话）；
+- 网关 → 用户 / 文件 / 数据库 / AI 服务：brpc（箭头为调用方向，实际为双向请求-响应）；
+- 文件 → Excel 解析、数据库；AI → 数据库：brpc（表结构提取 / SQL 执行）；
+- AI → 通知：brpc（发送结果邮件）；通知 → 浏览器：SMTP（验证码 / AI 结果邮件）；
+- 用户 / 文件 / 数据库 / AI → MySQL：持久化；用户 → Redis：验证码与缓存；文件 → FastDFS：文件存储；
+- AI → LLM：HTTPS（模型 API 调用，双向请求-响应）；
+- Services → etcd：各子服务启动时向注册中心登记并心跳续约。
 
 **核心数据流（智能 Excel 场景）**：
 
