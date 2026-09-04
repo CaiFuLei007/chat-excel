@@ -974,6 +974,7 @@ const ExcelModule = {
   engine: null,
   preview: null,
   fileId: '',
+  uploading: false, // 上传中标志, 防止重复触发上传产生重复文件记录
 
   init() {
     const previewArea = document.getElementById('excel-preview-area');
@@ -1045,6 +1046,9 @@ const ExcelModule = {
   },
 
   async upload(file) {
+    // 防重复上传: 上传进行中时忽略后续 change/drop 触发, 避免同一次选择产生重复文件记录
+    if (this.uploading) return;
+    this.uploading = true;
     showLoading(I18N.t('common.loading'));
     try {
       const fileId = await uploadExcelFile(file);
@@ -1058,6 +1062,7 @@ const ExcelModule = {
       }
     } catch (e) { /* 已提示 */ }
     hideLoading();
+    this.uploading = false;
   },
 
   /** 外部（我的文件）携 fileId 进入 : 只加载文件预览, 不加载历史会话 */
@@ -1183,6 +1188,7 @@ const DatabaseModule = {
   currentTable: '',
   sqliteFiles: [],
   selectedSqliteFileId: '',
+  sqliteUploading: false, // SQLite 上传中标志, 防止重复上传产生重复文件记录
   // 是否强制查看原始数据(false = 预览修改后的临时表数据, true = 查看原始表数据)
   forceOriginal: false,
 
@@ -1214,29 +1220,35 @@ const DatabaseModule = {
     const input = document.getElementById('sqlite-file-input');
     zone.addEventListener('click', () => input.click());
     input.addEventListener('change', async () => {
-      if (!input.files.length) return;
+      if (!input.files.length || this.sqliteUploading) return;
+      const file = input.files[0];
+      input.value = ''; // 立即清空, 防止重复 change 事件在异步上传完成前再次上传
+      this.sqliteUploading = true;
       showLoading(I18N.t('common.loading'));
       try {
-        await uploadSqliteFile(input.files[0]);
+        await uploadSqliteFile(file);
         toast(I18N.t('console.uploadOk'), 'success');
         await this.loadSqliteFiles();
       } catch (e) { /* 已提示 */ }
       hideLoading();
-      input.value = '';
+      this.sqliteUploading = false;
     });
     zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
     zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
     zone.addEventListener('drop', async (e) => {
       e.preventDefault();
       zone.classList.remove('dragover');
-      if (!e.dataTransfer.files.length) return;
+      if (!e.dataTransfer.files.length || this.sqliteUploading) return;
+      const file = e.dataTransfer.files[0];
+      this.sqliteUploading = true;
       showLoading(I18N.t('common.loading'));
       try {
-        await uploadSqliteFile(e.dataTransfer.files[0]);
+        await uploadSqliteFile(file);
         toast(I18N.t('console.uploadOk'), 'success');
         await this.loadSqliteFiles();
       } catch (err) { /* 已提示 */ }
       hideLoading();
+      this.sqliteUploading = false;
     });
 
     document.getElementById('sqlite-connect-btn').addEventListener('click', () => this.connectSqlite());
@@ -1345,7 +1357,7 @@ const DatabaseModule = {
       this._saveConns(conns);
       renderDbConnList();
       toast(I18N.t('console.connOk'), 'success');
-      await this.enterConnection({ connectionId: result.connectionId, type: 'MySQL', info: mysqlInfo });
+      await this.enterConnection({ connectionId: result.connectionId, type: 'MySQL', info: mysqlInfo }, true);
     } catch (e) { /* 已提示 */ }
     hideLoading();
   },
@@ -1388,13 +1400,19 @@ const DatabaseModule = {
         connectionId: result.connectionId,
         type: 'SQLite',
         info: { fileId: this.selectedSqliteFileId, fileName: file ? file.fileName : '' }
-      });
+      }, true);
     } catch (e) { /* 已提示 */ }
     hideLoading();
   },
 
-  /** 进入聊天界面：加载表列表 */
-  async enterConnection(conn) {
+  /**
+   * 进入聊天界面：加载表列表
+   * @param {object} conn 连接信息
+   * @param {boolean} autoNewSession 是否在进入后自动新建会话;
+   *    true 用于用户主动建立/进入连接的场景(自动隔离上个连接残留的会话与聊天上下文),
+   *    false 用于历史会话恢复场景(恢复时下方会显式绑定历史 chatSessionId, 避免误建空会话)
+   */
+  async enterConnection(conn, autoNewSession) {
     this.conn = conn;
     document.getElementById('db-manage-view').style.display = 'none';
     document.getElementById('db-chat-view').style.display = '';
@@ -1415,6 +1433,10 @@ const DatabaseModule = {
       console.log('[db] 默认选中表:', this.currentTable);
       if (this.currentTable) await this.loadTableData(this.currentTable);
       this.refreshConnStatus();
+      // 用户主动进入新连接时自动新建会话并清空上下文, 避免沿用上个连接的聊天会话与消息
+      if (autoNewSession && ConsoleState.currentModel) {
+        await this.newSession();
+      }
     } catch (e) {
       // 调试日志: 表列表加载失败时打印完整错误
       console.error('[db!] enterConnection 加载表列表失败:', e);
@@ -1569,6 +1591,8 @@ const DatabaseModule = {
     // 数据操作类(增删改/建表等)：不进入结果分析面板，仅让聊天气泡展示总结并刷新表数据
     if (isDataModifyResult(obj)) {
       this._refreshAfterWrite();
+      // 数据写操作后同步刷新连接状态, 使"已在新表上执行"的临时表提示条立即展示
+      this.refreshConnStatus();
       return false;
     }
     document.getElementById('db-result-empty').style.display = 'none';
@@ -1683,7 +1707,7 @@ function renderDbConnList() {
     const connId = card.dataset.connid;
     const conn = conns.find((c) => c.connectionId === connId);
     card.querySelector('[data-act="enter"]').addEventListener('click', () => {
-      DatabaseModule.enterConnection({ connectionId: connId, type: 'MySQL', info: conn });
+      DatabaseModule.enterConnection({ connectionId: connId, type: 'MySQL', info: conn }, true);
     });
     card.querySelector('[data-act="disconnect"]').addEventListener('click', async () => {
       const yes = await confirmDialog(I18N.t('db.confirmDisconnect'));
@@ -1780,7 +1804,7 @@ const FilesModule = {
               connectionId: result.connectionId,
               type: 'SQLite',
               info: { fileId, fileName: file.fileName }
-            });
+            }, true);
           } catch (e) { /* 已提示 */ }
           hideLoading();
         }
