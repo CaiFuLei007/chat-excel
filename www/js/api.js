@@ -20,6 +20,8 @@ class ApiError extends Error {
 function handleAuthFailure(errorCode) {
   if (errorCode === 111) {
     clearSessionId();
+    // 会话已失效, 同步清除本地保存的数据库连接卡片, 避免下次登录展示已失效的连接
+    localStorage.removeItem(CONFIG.KEYS.MYSQL_CONNS);
     window.location.href = 'login.html';
     return true;
   }

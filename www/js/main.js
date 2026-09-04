@@ -100,6 +100,7 @@ I18N.register(
     'db.disconnectOk': '已断开连接',
     'db.confirmDisconnect': '确定断开该连接？',
     'db.connected': '已连接',
+    'db.invalidRemoved': '该数据库连接已失效，已自动移除，请重新连接',
 
     /* ---- 个人中心 ---- */
     'profile.nickname': '昵称', 'profile.email': '邮箱',
@@ -198,6 +199,7 @@ I18N.register(
     'db.disconnectOk': 'Disconnected',
     'db.confirmDisconnect': 'Disconnect this connection?',
     'db.connected': 'Connected',
+    'db.invalidRemoved': 'This database connection expired and was removed. Please reconnect.',
 
     /* ---- Profile ---- */
     'profile.nickname': 'Nickname', 'profile.email': 'Email',
@@ -806,6 +808,8 @@ async function initConsolePage() {
   /* ---- 1. 恢复登录态 ---- */
   const sid = getSessionId();
   if (!sid) {
+    // 本地没有登录态, 同步清除可能残留的历史数据库连接卡片, 避免下次登录展示失效连接
+    localStorage.removeItem(CONFIG.KEYS.MYSQL_CONNS);
     window.location.href = 'login.html';
     return;
   }
@@ -814,6 +818,8 @@ async function initConsolePage() {
     await API.sessionLogin(sid);
   } catch (e) {
     clearSessionId();
+    // 登录态恢复失败(会话已过期), 同步清除本地保存的数据库连接卡片
+    localStorage.removeItem(CONFIG.KEYS.MYSQL_CONNS);
     window.location.href = 'login.html';
     return;
   }
@@ -975,6 +981,7 @@ const ExcelModule = {
   preview: null,
   fileId: '',
   uploading: false, // 上传中标志, 防止重复触发上传产生重复文件记录
+  fileMappedSessionId: '', // 已与当前文件完成关联的聊天会话 ID, 用于幂等映射
 
   init() {
     const previewArea = document.getElementById('excel-preview-area');
@@ -1030,6 +1037,9 @@ const ExcelModule = {
           const ok = await this._ensureSession();
           if (!ok) return null;
         }
+        // 发送前确保文件与会话的映射已完成(await), 避免消息到达后端时映射未落库,
+        // 防止后端元数据更新把 file_id 覆盖为空导致历史会话无法恢复文件预览
+        await this._ensureFileMapped();
         return { chatSessionId: this.engine.chatSessionId, chatType: 'excel', fileId: this.fileId };
       },
       onFinalResult: (obj) => this.showResult(obj)
@@ -1045,6 +1055,14 @@ const ExcelModule = {
     sel.innerHTML = names.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
   },
 
+  /** 确保当前文件已关联到当前聊天会话; 已关联时幂等跳过 */
+  async _ensureFileMapped() {
+    if (!this.fileId || !this.engine.chatSessionId) return;
+    if (this.fileMappedSessionId === this.engine.chatSessionId) return;
+    await API.fileChatMap(this.fileId, this.engine.chatSessionId);
+    this.fileMappedSessionId = this.engine.chatSessionId;
+  },
+
   async upload(file) {
     // 防重复上传: 上传进行中时忽略后续 change/drop 触发, 避免同一次选择产生重复文件记录
     if (this.uploading) return;
@@ -1053,13 +1071,12 @@ const ExcelModule = {
     try {
       const fileId = await uploadExcelFile(file);
       this.fileId = fileId;
+      this.fileMappedSessionId = ''; // 新文件需要重新建立与会话的映射
       await this.preview.load(fileId);
       document.getElementById('excel-upload-zone').style.display = 'none';
       toast(I18N.t('console.uploadOk'), 'success');
-      // 若已有会话，关联文件与会话
-      if (this.engine.chatSessionId) {
-        API.fileChatMap(fileId, this.engine.chatSessionId).catch(() => {});
-      }
+      // 若已有会话, 关联文件与会话(等待完成, 保证映射先于后续消息)
+      await this._ensureFileMapped();
     } catch (e) { /* 已提示 */ }
     hideLoading();
     this.uploading = false;
@@ -1075,6 +1092,7 @@ const ExcelModule = {
       this.engine.clearMessages();
       this._resetResult();
       this.fileId = fileId;
+      this.fileMappedSessionId = ''; // 新文件需要重新建立映射
       await this.preview.load(fileId);
       document.getElementById('excel-upload-zone').style.display = 'none';
     } catch (e) { /* 已提示 */ }
@@ -1098,6 +1116,7 @@ const ExcelModule = {
   /** 清空所有信息 : 文件预览数据、结果分析与聊天内容 */
   _clearAll() {
     this.fileId = '';
+    this.fileMappedSessionId = '';
     this.preview.clear();
     document.getElementById('excel-upload-zone').style.display = '';
     document.getElementById('excel-sheet-select').innerHTML = '';
@@ -1125,7 +1144,9 @@ const ExcelModule = {
         sessionType: 'excel'
       });
       this.engine.setSession(result.chatSessionId);
-      API.fileChatMap(this.fileId, result.chatSessionId).catch(() => {});
+      // 先建立文件与会话的映射(等待完成), 再允许发送消息, 避免消息处理时映射未落库
+      this.fileMappedSessionId = '';
+      await this._ensureFileMapped();
       return true;
     } catch (e) { return false; }
   },
@@ -1304,6 +1325,7 @@ const DatabaseModule = {
     document.getElementById('db-new-session').addEventListener('click', () => this.newSession());
 
     this.renderDbConnListInit();
+    this._pruneInvalidSavedConns(); // 启动时清理已失效(服务端连接不存在)的历史连接卡片
     document.getElementById('db-result-empty').innerHTML = `${icon('chartBar')}<div class="empty-desc">${escapeHtml(I18N.t('console.resultEmpty'))}</div>`;
     document.getElementById('db-table-empty').innerHTML = `${icon('table')}<div class="empty-desc">${escapeHtml(I18N.t('console.tableEmpty'))}</div>`;
   },
@@ -1322,6 +1344,43 @@ const DatabaseModule = {
 
   renderDbConnListInit() {
     renderDbConnList();
+  },
+
+  /**
+   * 校验本地保存的 MySQL 连接卡片在服务端是否仍然有效。
+   * 连接由 database 子服务在内存中维护, 服务重启/会话结束都会使其失效;
+   * 校验走 D03(dbTables): 连接不存在时后端返回 errorCode=315, 存在时正常返回表列表。
+   * 若直接点击"进入/断开"会报"数据库连接不存在", 故在此静默剔除已失效的卡片。
+   */
+  async _pruneInvalidSavedConns() {
+    const conns = this._loadConns();
+    if (!conns.length) return;
+    const results = await Promise.all(
+      conns.map((c) =>
+        apiRequest('/api/db/tables', {}, {
+          method: 'GET',
+          silent: true,
+          sessionId: false,
+          query: { requestId: genRequestId(), sessionId: getSessionId(), dbConnectId: c.connectionId }
+        })
+          .then(() => 'ok')
+          .catch((e) => (e && e.errorCode === 315 ? 'invalid' : 'unknown'))
+      )
+    );
+    const kept = [];
+    let droppedCount = 0;
+    conns.forEach((c, i) => {
+      if (results[i] === 'invalid') {
+        droppedCount += 1;
+      } else {
+        kept.push(c);
+      }
+    });
+    if (droppedCount > 0) {
+      this._saveConns(kept);
+      renderDbConnList();
+      toast(`${I18N.t('db.invalidRemoved')}${droppedCount > 1 ? `（${droppedCount}）` : ''}`, 'error');
+    }
   },
 
   async connectMySQL(form) {
@@ -1440,6 +1499,17 @@ const DatabaseModule = {
     } catch (e) {
       // 调试日志: 表列表加载失败时打印完整错误
       console.error('[db!] enterConnection 加载表列表失败:', e);
+      // 自愈: 连接在服务端已不存在(errorCode=315)时, 自动移除本地保存的失效卡片并返回连接管理页
+      if (e && e.errorCode === 315) {
+        const current = this._loadConns();
+        const kept = current.filter((c) => c.connectionId !== conn.connectionId);
+        if (kept.length !== current.length) {
+          this._saveConns(kept);
+          renderDbConnList();
+          this.showManageView();
+          toast(I18N.t('db.invalidRemoved'), 'error');
+        }
+      }
     }
   },
 
@@ -1537,6 +1607,8 @@ const DatabaseModule = {
     document.getElementById('db-back-manage').style.display = 'none';
     document.getElementById('db-new-session').style.display = 'none';
     renderDbConnList();
+    // 返回连接管理页时顺带清理已失效的连接卡片
+    this._pruneInvalidSavedConns();
   },
 
   /** 新建会话 : 清空结果分析与聊天内容并创建新会话 */
@@ -1717,7 +1789,14 @@ function renderDbConnList() {
         DatabaseModule._saveConns(conns.filter((c) => c.connectionId !== connId));
         renderDbConnList();
         toast(I18N.t('db.disconnectOk'), 'success');
-      } catch (e) { /* 已提示 */ }
+      } catch (e) {
+        // 自愈: 连接在服务端已不存在(errorCode=315)时, 直接移除本地保存的失效卡片
+        if (e && e.errorCode === 315) {
+          DatabaseModule._saveConns(conns.filter((c) => c.connectionId !== connId));
+          renderDbConnList();
+          toast(I18N.t('db.invalidRemoved'), 'error');
+        }
+      }
     });
   });
 }
@@ -1934,6 +2013,8 @@ const ProfileModule = {
       try {
         await API.logout();
       } catch (e) { /* 忽略登出错误 */ }
+      // 退出登录同时清除本地保存的数据库连接卡片, 避免换账号登录后残留上个账号的连接
+      localStorage.removeItem(CONFIG.KEYS.MYSQL_CONNS);
       clearSessionId();
       toast(I18N.t('console.logoutOk'), 'success');
       setTimeout(() => { window.location.href = 'login.html'; }, 400);
