@@ -56,6 +56,16 @@ public:
     static bool IsValidColumnName(const std::string& column_name);
 
     /**
+     * @brief 将标识符按字符数截断到最大长度限制, 超长时截断; 长度按 UTF-8
+     *        字符统计(汉字等多字节字符按 1 个字符计), 截断位置保证不会切断多字节字符
+     * @param identifier 原始标识符(表名/列名等)
+     * @param max_char_count 截断后允许的最大字符数
+     * @return 未超长返回原字符串, 超长返回按字符截断后的字符串
+     */
+    static std::string TruncateIdentifier(const std::string& identifier,
+                                           size_t max_char_count);
+
+    /**
      * @brief 判断是否包含危险操作, 以完整词形式匹配危险关键字列表(大小写不敏感,
      *        匹配前会移除注释, 遮蔽引号内容并合并连续空白); 词边界校验确保命中的
      *        是关键字本身, 引号内的表名/字段名/字符串数据不会误判

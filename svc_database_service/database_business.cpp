@@ -875,12 +875,12 @@ std::string DatabaseBusiness::GenerateTempTableName(const std::string& original_
     // 临时表后缀 : _temp_毫秒时间戳, 时间戳保证同一原表多次创建的临时表名不重复
     const std::string temp_table_suffix = kTempTableSeparator + std::to_string(NowMilliseconds());
 
-    // 原表名部分超长时截断, 保证临时表名不超过数据库标识符最大长度限制
-    std::string table_name_prefix = original_table_name;
-    if (table_name_prefix.size() + temp_table_suffix.size() > kMaxIdentifierLength)
-    {
-        table_name_prefix = table_name_prefix.substr(0, kMaxIdentifierLength - temp_table_suffix.size());
-    }
+    // 原表名部分超长时按字符数截断, 保证临时表名不超过数据库标识符最大长度限制;
+    // 原表名可包含汉字等多字节字符, 按字节截断会误超长或切断多字节字符,
+    // 因此截断与长度判断均按 UTF-8 字符进行(后缀为 ASCII, 字节数等于字符数)
+    const size_t max_prefix_char_count = kMaxIdentifierLength - temp_table_suffix.size();
+    const std::string table_name_prefix =
+        SQLValidator::TruncateIdentifier(original_table_name, max_prefix_char_count);
     return table_name_prefix + temp_table_suffix;
 }
 

@@ -224,8 +224,28 @@ const std::vector<std::string>& GetNormalizedDangerousKeywords()
 }
 
 /**
- * @brief 校验标识符主体的有效性 : 不为空, 不超过最大长度限制; 只能包含数字, 字母,
- *        下划线, 汉字等多字节字符, 以及可选的连接符(-)与点(.);
+ * @brief 统计字符串的字符个数(按 UTF-8 字符统计) : ASCII 字符与 UTF-8 多字节字符的
+ *        首字节各计 1 个, 多字节字符的连续字节(0x80-0xBF)不计数
+ * @param text 原始字符串
+ * @return 字符个数
+ */
+size_t CountCharacters(const std::string& text)
+{
+    size_t count = 0;
+    for (const unsigned char ch : text)
+    {
+        if ((ch & 0xC0) != 0x80)
+        {
+            ++count;
+        }
+    }
+    return count;
+}
+
+/**
+ * @brief 校验标识符主体的有效性 : 不为空, 不超过最大长度限制(按 UTF-8 字符数统计,
+ *        汉字等多字节字符按 1 个字符计, 与 MySQL 标识符 64 字符上限保持一致);
+ *        只能包含数字, 字母, 下划线, 汉字等多字节字符, 以及可选的连接符(-)与点(.);
  *        连接符与点不能连续使用; 数字是否允许开头由参数控制
  * @param name 标识符名称
  * @param allow_special_char 是否允许包含特殊字符(连接符与点)
@@ -234,7 +254,7 @@ const std::vector<std::string>& GetNormalizedDangerousKeywords()
  */
 bool CheckIdentifierBody(const std::string& name, bool allow_special_char, bool allow_digit_first)
 {
-    if (name.empty() || name.size() > kMaxIdentifierLength)
+    if (name.empty() || CountCharacters(name) > kMaxIdentifierLength)
     {
         return false;
     }
@@ -419,11 +439,139 @@ void AddTableName(std::vector<std::string>& table_names, std::string table_name)
     table_names.push_back(std::move(table_name));
 }
 
+// SQL 语句主体关键字集合(用于 CTE 语句跳过 WITH 定义列表后识别主语句类型)
+const std::unordered_set<std::string> kStatementKeywords = {
+    "SELECT", "SHOW", "DESC", "DESCRIBE", "PRAGMA",
+    "INSERT", "UPDATE", "DELETE", "REPLACE", "TRUNCATE", "CREATE", "DROP", "ALTER",
+};
+
+/**
+ * @brief 跳过从 open_pos('(') 开始到匹配右括号之间的内容, 忽略引号(单/双/反引号)
+ *        内部的括号与转义, 正确处理嵌套括号
+ * @param sql 规范化后的 SQL 语句
+ * @param open_pos 左括号位置
+ * @return 匹配右括号之后的下标, 括号未闭合时返回 std::string::npos
+ */
+size_t SkipBalancedParentheses(const std::string& sql, size_t open_pos)
+{
+    int depth = 0;
+    char quote = 0;
+    bool in_quote = false;
+    for (size_t i = open_pos; i < sql.size(); ++i)
+    {
+        const char ch = sql[i];
+        if (in_quote)
+        {
+            // 反斜杠转义(反引号标识符内无此转义)
+            if (ch == '\\' && quote != '`' && i + 1 < sql.size())
+            {
+                ++i;
+                continue;
+            }
+            if (ch == quote)
+            {
+                // 双写引号为内容内的转义引号
+                if (quote != '`' && i + 1 < sql.size() && sql[i + 1] == quote)
+                {
+                    ++i;
+                    continue;
+                }
+                in_quote = false;
+            }
+            continue;
+        }
+        if (ch == '\'' || ch == '"' || ch == '`')
+        {
+            in_quote = true;
+            quote = ch;
+            continue;
+        }
+        if (ch == '(')
+        {
+            ++depth;
+        }
+        else if (ch == ')')
+        {
+            --depth;
+            if (depth == 0)
+            {
+                return i + 1;
+            }
+        }
+    }
+    return std::string::npos;
+}
+
+/**
+ * @brief 提取 WITH 开头的 CTE 语句的主体语句关键字
+ *        WITH 语法: WITH cte1 [ (col...) ] AS ( 子查询 ) [, cte2 AS (...)] 主体语句
+ *        主体关键字位于 CTE 定义列表之后(跳过 AS(...) 与列清单括号);
+ *        对 MySQL 8 / SQLite 支持的 WITH ... SELECT / UPDATE / DELETE / INSERT 均有效
+ * @param normalized_sql 规范化后的 SQL 语句(已去除注释)
+ * @return 主体语句首关键字(大写), 无法识别时返回空字符串
+ */
+std::string ExtractCteMainKeyword(const std::string& normalized_sql)
+{
+    size_t i = 0;
+    const size_t n = normalized_sql.size();
+    while (i < n)
+    {
+        // 跳过空白与逗号(CTE 定义列表分隔符)
+        while (i < n && (normalized_sql[i] == ' ' || normalized_sql[i] == '\t'
+                         || normalized_sql[i] == '\n' || normalized_sql[i] == '\r'
+                         || normalized_sql[i] == '\v' || normalized_sql[i] == '\f'
+                         || normalized_sql[i] == ','))
+        {
+            ++i;
+        }
+        if (i >= n)
+        {
+            break;
+        }
+        // 括号内容整体跳过(CTE 列清单或 AS(...) 子查询), 内部关键字不影响判定
+        if (normalized_sql[i] == '(')
+        {
+            const size_t after = SkipBalancedParentheses(normalized_sql, i);
+            if (after == std::string::npos)
+            {
+                return ""; // 括号未闭合, 语句非法
+            }
+            i = after;
+            continue;
+        }
+        if (!IsIdentifierChar(static_cast<unsigned char>(normalized_sql[i])))
+        {
+            // 无法解释的顶层符号(分号/星号等), 跳过继续扫描
+            ++i;
+            continue;
+        }
+        const size_t start = i;
+        while (i < n && IsIdentifierChar(static_cast<unsigned char>(normalized_sql[i])))
+        {
+            ++i;
+        }
+        const std::string word = ToUpperAscii(normalized_sql.substr(start, i - start));
+        // 语句主体关键字: WITH 与 CTE 名称/AS 均不在集合中, 继续扫描
+        if (kStatementKeywords.count(word) != 0)
+        {
+            return word;
+        }
+    }
+    return "";
+}
+
 } // namespace
 
 SqlType SQLValidator::GetSqlType(const std::string& sql)
 {
-    std::string first_keyword = GetFirstKeyword(NormalizeSql(sql));
+    std::string normalized_sql = NormalizeSql(sql);
+    std::string first_keyword = GetFirstKeyword(normalized_sql);
+    // WITH 开头的 CTE 语句: 语句主体关键字位于 CTE 定义列表之后, 需解析后再判定类型,
+    // 否则 WITH ... SELECT 会被误判为 UNKNOWN 而当作修改类语句处理
+    if (first_keyword == "WITH")
+    {
+        first_keyword = ExtractCteMainKeyword(normalized_sql);
+    }
     if (first_keyword == "SELECT")
     {
         return SqlType::SELECT;
@@ -530,6 +678,37 @@ bool SQLValidator::IsValidColumnName(const std::string& column_name)
     }
     // 未使用引号包裹 : 不允许包含特殊字符(连接符与点)
     return CheckIdentifierBody(column_name, false, false);
+}
+
+std::string SQLValidator::TruncateIdentifier(const std::string& identifier,
+                                             size_t max_char_count)
+{
+    const size_t char_count = CountCharacters(identifier);
+    if (char_count <= max_char_count)
+    {
+        return identifier;
+    }
+
+    // 按字符边界截断, 避免在 UTF-8 多字节字符的连续字节中间截断:
+    // 遇到新字符的首字节且已集满 max_char_count 个字符时停止,
+    // 连续字节(0x80-0xBF)不属于新字符, 计入当前已包含的字符
+    size_t end = 0;
+    size_t counted = 0;
+    while (end < identifier.size())
+    {
+        const unsigned char ch = static_cast<unsigned char>(identifier[end]);
+        const bool is_character_start = (ch & 0xC0) != 0x80;  // ASCII 或 UTF-8 首字节
+        if (is_character_start && counted >= max_char_count)
+        {
+            break;
+        }
+        if (is_character_start)
+        {
+            ++counted;
+        }
+        ++end;
+    }
+    return identifier.substr(0, end);
 }
 
 bool SQLValidator::ContainsDangerousOperation(const std::string& sql)

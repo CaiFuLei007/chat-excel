@@ -155,6 +155,23 @@ TEST(IsValidTableNameTest, CheckMaxLengthBoundary)
     EXPECT_FALSE(SQLValidator::IsValidTableName(std::string(kMaxIdentifierLength + 1, 'a')));
 }
 
+// 边界情况: 表名长度按 UTF-8 字符统计(汉字等多字节字符计 1 个字符), 而非按字节数
+TEST(IsValidTableNameTest, CountLengthByUtf8Characters)
+{
+    // 66 字节 / 48 字符的表名(汉字 + 全角括号), 在 MySQL 标识符 64 字符上限内, 应为有效表名
+    EXPECT_TRUE(SQLValidator::IsValidTableName(
+        "excel_25879187e1714aafa85f35eece556fb4_考场明细（学生用）"));
+    // 64 个汉字(192 字节)恰好达到上限有效, 65 个汉字超过上限无效
+    // 注意: 不能使用 '汉' 多字符字面量填充 std::string, 需按 UTF-8 字符串重复拼接
+    std::string chinese_64;
+    for (size_t i = 0; i < kMaxIdentifierLength; ++i)
+    {
+        chinese_64 += "汉";
+    }
+    EXPECT_TRUE(SQLValidator::IsValidTableName(chinese_64));
+    EXPECT_FALSE(SQLValidator::IsValidTableName(chinese_64 + "汉"));
+}
+
 // 正常情况: 普通列名与引号包裹的含特殊字符列名均为有效列名
 TEST(IsValidColumnNameTest, AcceptValidColumnName)
 {
@@ -175,6 +192,24 @@ TEST(IsValidColumnNameTest, RejectInvalidColumnName)
     EXPECT_FALSE(SQLValidator::IsValidColumnName(""));
     EXPECT_FALSE(SQLValidator::IsValidColumnName("1col"));
     EXPECT_FALSE(SQLValidator::IsValidColumnName("-"));
+}
+
+// 正常情况: 标识符未超长时原样返回, 空字符串保持原样
+TEST(TruncateIdentifierTest, ReturnOriginalWhenWithinLimit)
+{
+    EXPECT_EQ(SQLValidator::TruncateIdentifier("excel_table", 64), "excel_table");
+    EXPECT_EQ(SQLValidator::TruncateIdentifier("", 10), "");
+    EXPECT_EQ(SQLValidator::TruncateIdentifier("汉字表", 3), "汉字表");
+}
+
+// 正常情况: 标识符超长时按字符数截断, 且不会切断 UTF-8 多字节字符
+TEST(TruncateIdentifierTest, TruncateByCharactersNotBytes)
+{
+    // 7 个 ASCII 字符 + 6 个汉字共 13 个字符(25 字节), 截断到 8 个字符
+    const std::string source = "abcdefg汉字汉字汉字";
+    EXPECT_EQ(SQLValidator::TruncateIdentifier(source, 8), "abcdefg汉");
+    EXPECT_EQ(SQLValidator::TruncateIdentifier(source, 0), "");
+    EXPECT_EQ(SQLValidator::TruncateIdentifier(std::string(20, 'a'), 10), std::string(10, 'a'));
 }
 
 // 正常情况: 各常见注入攻击特征命中危险操作判定, 大小写不敏感
