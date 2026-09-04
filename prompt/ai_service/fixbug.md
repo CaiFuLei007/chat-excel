@@ -85,4 +85,4 @@
 
 ## 9. AI 总结内容流式返回
 
-1. 阅读 /home/banju/repo/chat-excel/svc_ai_service AI 子服务中的代码 , 当前 AI 总结内容是全量返回 , 不符合前端展示需求 , 将其修改为流式返回 , 修改 AIMessageHandler::HandleAnalysisChat 该接口 , 实现流式返回
+1. 阅读 svc_ai_service AI 子服务中的代码 , 当前 AI 总结内容是全量返回 , 不符合前端展示需求 , 将其修改为流式返回 , 修改 AIMessageHandler::HandleAnalysisChat 该接口 , 实现流式返回
