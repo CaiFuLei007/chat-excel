@@ -52,6 +52,24 @@ message GetFileInfoResponse {
   FileDetail result = 4; // 文件详情
 }
 
+//////////////////////// 按聊天会话反查文件(历史会话文件兜底) ////////////////////////
+// 历史 Excel 会话元数据(file_id)可能因早期竞态缺失, 但文件表中仍保留
+// file_info.session_id = chat_session_id 的映射, 网关在 A04 历史接口中
+// 发现 fileId 为空时, 可调用本接口反查并回填文件 ID, 恢复历史会话的文件预览
+message GetFileInfoByChatSessionRequest {
+  string request_id = 1; // 请求ID
+  string session_id = 2; // 登录会话ID
+  string user_id = 3; // 用户ID
+  string chat_session_id = 4; // 聊天会话ID
+}
+
+message GetFileInfoByChatSessionResponse {
+  string request_id = 1; // 请求ID
+  int32 error_code = 2; // 错误码
+  string error_msg = 3; // 错误信息
+  FileDetail result = 4; // 文件详情, 未关联文件时不设置 result
+}
+
 //////////////////////// 上传文件 ////////////////////////
 // 注意：
 // 1. 前端通过HTTP协议上传文件数据，文件数据实际在HTTP的body中
@@ -257,6 +275,7 @@ service FileService {
   rpc UploadFileInfo(UploadFileInfoRequest) returns (UploadFileInfoResponse);
   // 获取文件信息
   rpc GetFileInfo(GetFileInfoRequest) returns (GetFileInfoResponse);
+  rpc GetFileInfoByChatSession(GetFileInfoByChatSessionRequest) returns (GetFileInfoByChatSessionResponse);
   // 上传文件
   rpc UploadFile(UploadFileRequest) returns (UploadFileResponse);
   // 下载文件

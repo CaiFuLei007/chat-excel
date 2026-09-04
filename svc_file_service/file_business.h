@@ -66,6 +66,18 @@ public:
                          const std::string& file_id);
 
     /**
+     * @brief 通过聊天会话 ID 反查关联文件(文件表中 session_id 列保存聊天会话 ID),
+     *        用于历史 Excel 会话元数据 file_id 缺失时(A04 接口)的兜底恢复
+     * @param request_id 请求 ID, 用于日志链路追踪
+     * @param user_id 用户 ID
+     * @param chat_session_id 聊天会话 ID
+     * @return 文件信息; 会话未关联文件时返回 std::nullopt(不视为错误)
+     */
+    std::optional<FileInfo> GetFileByChatSession(const std::string& request_id,
+                                                 const std::string& user_id,
+                                                 const std::string& chat_session_id);
+
+    /**
      * @brief 删除文件信息, 校验文件属主后删除数据库与缓存中的文件信息,
      *        以及 Excel 对应的 WorkSheet 数据(数据库与缓存)
      * @param request_id 请求 ID, 用于日志链路追踪

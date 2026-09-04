@@ -25,12 +25,42 @@ bool ChatSessionManager::CheckChatSessionOwner(const std::string& user_id,
 
 void ChatSessionManager::SaveOrUpdateChatSession(const ChatSessionInfo& chat_session_info)
 {
+    // 合并已有会话的文件关联与连接信息:
+    // 消息轮次处理时, 会话元数据在发送开始即被读取并缓存在内存中; 若处理期间文件/数据库
+    // 连接映射已建立(例如前端先触发 fileChatMap 再发消息的竞态), 携带的 file_id /
+    // connection_info 可能仍为空, 直接保存会把刚落库的映射值覆盖为空串(NULL),
+    // 导致历史会话接口(A04)拿不到 fileId、数据库会话拿不到连接信息。
+    // 因此保存前对这两个字段执行"传入为空则保留数据库现值"的合并, 防止映射被空值清掉。
+    ChatSessionInfo merged_info = chat_session_info;
+    try
+    {
+        std::optional<ChatSessionInfo> existing_info =
+            chat_session_data_->GetChatSessionBySessionId(chat_session_info.chat_session_id);
+        if (existing_info)
+        {
+            if (merged_info.file_id.empty() && !existing_info->file_id.empty())
+            {
+                merged_info.file_id = existing_info->file_id;
+            }
+            if (merged_info.connection_info.empty() && !existing_info->connection_info.empty())
+            {
+                merged_info.connection_info = existing_info->connection_info;
+            }
+        }
+    }
+    catch (const ChatExcelException& e)
+    {
+        // 会话记录不存在时按传入信息原样保存(会话创建场景), 不阻塞保存流程
+        ERR("保存会话元数据前合并文件/连接信息失败, chat_session_id: {}, 错误: {}",
+            chat_session_info.chat_session_id, e.what());
+    }
+
     // 保存或更新 MySQL 中的聊天会话元数据
-    chat_session_data_->SaveOrUpdateChatSession(chat_session_info);
+    chat_session_data_->SaveOrUpdateChatSession(merged_info);
 
     // 写策略(Cache-Aside): 修改 MySQL 后删除 Redis 缓存, 等待后续重新缓存
-    chat_session_data_->DeleteChatSessionBySessionIdFromCache(chat_session_info.chat_session_id);
-    INFO("保存或更新聊天会话元数据成功, chat_session_id: {}", chat_session_info.chat_session_id);
+    chat_session_data_->DeleteChatSessionBySessionIdFromCache(merged_info.chat_session_id);
+    INFO("保存或更新聊天会话元数据成功, chat_session_id: {}", merged_info.chat_session_id);
 }
 
 std::vector<ChatSessionInfo> ChatSessionManager::GetChatSessionListByUserId(const std::string& user_id)

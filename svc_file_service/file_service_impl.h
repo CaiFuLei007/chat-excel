@@ -56,6 +56,18 @@ public:
                              google::protobuf::Closure* done) override;
 
     /**
+     * @brief 通过聊天会话 ID 反查关联文件, 用于历史 Excel 会话 file_id 缺失时的兜底恢复
+     * @param controller RPC 控制器
+     * @param request RPC 请求, 携带请求 ID、登录会话 ID、用户 ID 与聊天会话 ID
+     * @param response RPC 响应, 携带错误码、错误信息与文件详情(未关联时 result 不设置)
+     * @param done RPC 结束回调, 由 brpc::ClosureGuard 管理生命周期
+     */
+    virtual void GetFileInfoByChatSession(google::protobuf::RpcController* controller,
+                                          const proto::GetFileInfoByChatSessionRequest* request,
+                                          proto::GetFileInfoByChatSessionResponse* response,
+                                          google::protobuf::Closure* done) override;
+
+    /**
      * @brief 上传 Excel 文件数据, 文件数据从 RPC attachment 中读取,
      *        上传到 FastDFS 后触发 Excel 解析流程
      * @param controller RPC 控制器, 文件数据通过其 request_attachment 传输

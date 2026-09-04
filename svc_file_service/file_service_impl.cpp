@@ -1,5 +1,6 @@
 #include "svc_file_service/file_service_impl.h"
 
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -208,6 +209,68 @@ void FileServiceImpl::GetFileInfo(google::protobuf::RpcController* /*controller*
         // 非预期异常, 统一按照业务处理失败的逻辑进行处理
         ERR("GetFileInfo 接口非预期异常, request_id: {}, file_id: {}, 错误信息: {}",
             request->request_id(), request->file_id(), e.what());
+        SetErrorResponse(response, ErrorCode::FILE_SERVICE_INTERNAL_ERROR, e.what());
+    }
+}
+
+void FileServiceImpl::GetFileInfoByChatSession(google::protobuf::RpcController* /*controller*/,
+                                               const proto::GetFileInfoByChatSessionRequest* request,
+                                               proto::GetFileInfoByChatSessionResponse* response,
+                                               google::protobuf::Closure* done)
+{
+    // 管理 RPC 响应的内存生命周期, 函数结束析构时自动调用 done->Run() 返回响应
+    brpc::ClosureGuard closure_guard(done);
+
+    // 响应中回填请求 ID, 用于请求与响应的链路追踪
+    response->set_request_id(request->request_id());
+
+    try
+    {
+        // 参数解析与校验, 用户 ID 与聊天会话 ID 均不能为空
+        if (request->user_id().empty())
+        {
+            ERR("GetFileInfoByChatSession 接口请求参数错误, user_id 为空, request_id: {}",
+                request->request_id());
+            SetErrorResponse(response, ErrorCode::FILE_SERVICE_USER_ID_EMPTY);
+            return;
+        }
+        else if (request->chat_session_id().empty())
+        {
+            ERR("GetFileInfoByChatSession 接口请求参数错误, chat_session_id 为空, request_id: {}",
+                request->request_id());
+            SetErrorResponse(response, ErrorCode::FILE_SERVICE_FILE_ID_EMPTY);
+            return;
+        }
+
+        // 通过聊天会话反查文件; 未命中不视为错误, result 不设置由网关自行处理
+        const std::optional<FileInfo> file_info =
+            file_business_->GetFileByChatSession(request->request_id(), request->user_id(),
+                                                 request->chat_session_id());
+        if (file_info)
+        {
+            proto::FileDetail* result_file_detail = response->mutable_result();
+            result_file_detail->set_file_id(file_info->file_id);
+            result_file_detail->set_file_name(file_info->file_name);
+            result_file_detail->set_file_size(static_cast<int64_t>(file_info->file_size));
+            result_file_detail->set_upload_time(static_cast<int64_t>(file_info->file_upload_time));
+            result_file_detail->set_file_ext(file_info->file_extension);
+        }
+
+        // 成功仅设置成功错误码, 不添加成功的描述信息
+        response->set_error_code(static_cast<int>(ErrorCode::SUCCESS));
+    }
+    catch (const ChatExcelException& e)
+    {
+        // 业务处理异常, 按照业务处理失败的逻辑进行处理
+        ERR("GetFileInfoByChatSession 接口业务处理异常, request_id: {}, chat_session_id: {}, 错误信息: {}",
+            request->request_id(), request->chat_session_id(), e.what());
+        SetErrorResponse(response, e.error_code());
+    }
+    catch (const std::exception& e)
+    {
+        // 非预期异常, 统一按照业务处理失败的逻辑进行处理
+        ERR("GetFileInfoByChatSession 接口非预期异常, request_id: {}, chat_session_id: {}, 错误信息: {}",
+            request->request_id(), request->chat_session_id(), e.what());
         SetErrorResponse(response, ErrorCode::FILE_SERVICE_INTERNAL_ERROR, e.what());
     }
 }

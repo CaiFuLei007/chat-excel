@@ -50,6 +50,15 @@ public:
     std::optional<FileInfo> GetFileByFileId(const std::string& file_id);
 
     /**
+     * @brief 通过聊天会话 ID 反查关联的文件信息(文件表中 session_id 列保存聊天会话 ID)
+     * @param user_id 用户 ID, 用于归属校验
+     * @param chat_session_id 聊天会话 ID
+     * @return 文件信息, 会话未关联文件时返回 std::nullopt
+     */
+    std::optional<FileInfo> GetFileByChatSession(const std::string& user_id,
+                                                 const std::string& chat_session_id);
+
+    /**
      * @brief 通过文件 ID 删除数据库中的文件信息, 文件不存在时不抛出异常
      * @param file_id 文件 ID
      */

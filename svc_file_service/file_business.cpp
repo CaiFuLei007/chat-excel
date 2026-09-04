@@ -553,6 +553,26 @@ FileInfo FileBusiness::GetFileInfo(const std::string& request_id, const std::str
     return GetFileInfoWithOwnerCheck(request_id, user_id, file_id);
 }
 
+std::optional<FileInfo> FileBusiness::GetFileByChatSession(const std::string& request_id,
+                                                           const std::string& user_id,
+                                                           const std::string& chat_session_id)
+{
+    // 文件表中 session_id 列保存 fileChatMap 写入的聊天会话 ID, 直接按属主+会话反查
+    std::optional<FileInfo> file_info =
+        file_data_->GetFileByChatSession(user_id, chat_session_id);
+    if (file_info)
+    {
+        INFO("通过聊天会话反查文件成功, request_id: {}, user_id: {}, chat_session_id: {}, file_id: {}",
+             request_id, user_id, chat_session_id, file_info->file_id);
+    }
+    else
+    {
+        INFO("通过聊天会话反查文件未命中, request_id: {}, user_id: {}, chat_session_id: {}",
+             request_id, user_id, chat_session_id);
+    }
+    return file_info;
+}
+
 void FileBusiness::DeleteFileInfo(const std::string& request_id, const std::string& user_id,
                                   const std::string& file_id)
 {

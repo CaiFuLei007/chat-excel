@@ -2571,8 +2571,36 @@ void GatewayServiceImpl::HandleAiHistory(const httplib::Request& request, httpli
         message_json["timestamp"] = static_cast<Json::Int64>(history_message.timestamp());
         message_list.append(message_json);
     }
+
+    // 兜底: 早期存在消息元数据保存时覆盖文件映射的竞态, 历史 Excel 会话的 file_id 可能为空,
+    // 此时按聊天会话 ID 到文件子服务反查文件(文件表 session_id 列保存聊天会话 ID)恢复文件预览
+    std::string history_file_id = rpc_response.result().file_id();
+    if (rpc_response.result().session_type() == "excel" && history_file_id.empty())
+    {
+        cpp_toolkit::ChannelPtr file_channel;
+        std::unique_ptr<file_proto::FileService_Stub> file_service_stub = CreateFileRpcStub(file_channel);
+        if (file_service_stub != nullptr)
+        {
+            file_proto::GetFileInfoByChatSessionRequest file_request;
+            file_request.set_request_id(request_id);
+            file_request.set_session_id(session_id);
+            file_request.set_user_id(user_id);
+            file_request.set_chat_session_id(chat_session_id);
+            file_proto::GetFileInfoByChatSessionResponse file_response;
+            if (CallFileRpc(request_id, file_service_stub.get(),
+                            &file_proto::FileService_Stub::GetFileInfoByChatSession,
+                            file_request, file_response, error_code, error_msg)
+                && file_response.has_result() && !file_response.result().file_id().empty())
+            {
+                history_file_id = file_response.result().file_id();
+                INFO("[A04] 通过聊天会话反查文件兜底成功, requestId: {}, chatSessionId: {}, fileId: {}",
+                     request_id, chat_session_id, history_file_id);
+            }
+        }
+    }
+
     result["messageList"] = message_list;
-    result["fileId"] = rpc_response.result().file_id();
+    result["fileId"] = history_file_id;
     result["sessionType"] = rpc_response.result().session_type();
     result["dbConnectionInfo"] = rpc_response.result().db_connection_info();
     SendEnvelopeResponse(response, rpc_response.request_id(), error_code, error_msg, result);

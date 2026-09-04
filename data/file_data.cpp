@@ -232,6 +232,36 @@ std::optional<FileInfo> FileData::GetFileByFileId(const std::string& file_id)
     }
 }
 
+std::optional<FileInfo> FileData::GetFileByChatSession(const std::string& user_id,
+                                                       const std::string& chat_session_id)
+{
+    try
+    {
+        // SQL : SELECT ... FROM tbl_file_info WHERE user_id = '{user_id}' AND session_id = '{chat_session_id}'
+        // 文件表中 session_id 列保存关联的聊天会话 ID(fileChatMap 写入), 取第一条即可
+        odb::transaction transaction(mysql_handle_->begin());
+        odb::result<FileEntity> result(mysql_handle_->query<FileEntity>(
+            odb::query<FileEntity>::user_id == user_id
+            && odb::query<FileEntity>::session_id == chat_session_id));
+        odb::result<FileEntity>::iterator iter = result.begin();
+        if (iter == result.end())
+        {
+            transaction.commit();
+            return std::nullopt;
+        }
+
+        FileInfo file_info = EntityToInfo(*iter);
+        transaction.commit();
+        return file_info;
+    }
+    catch (const odb::exception& e)
+    {
+        ERR("通过聊天会话反查文件信息失败, user_id: {}, chat_session_id: {}, 错误: {}",
+            user_id, chat_session_id, e.what());
+        throw ChatExcelException(ErrorCode::FILE_GET_BY_FILE_ID_ERROR);
+    }
+}
+
 void FileData::DeleteFileByFileId(const std::string& file_id)
 {
     try
