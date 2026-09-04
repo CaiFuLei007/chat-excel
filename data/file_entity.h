@@ -146,9 +146,10 @@ private:
     unsigned long long id_;
 
     // Excel 文件唯一标识符, 通过该字段获取指定文件的元信息
+    // 文件 ID 为 36 字符的 UUIDv4(带连字符), 列宽取 64; 其他表关联的 file_id 列宽同为 64
     // unique 约束自动创建唯一索引, 保证字段唯一性的同时支持快速查找文件信息
 #ifdef ODB_COMPILER
-#pragma db column("file_id") type("VARCHAR(32)") unique
+#pragma db column("file_id") type("VARCHAR(64)") unique
 #endif
     std::string file_id_;
 
@@ -184,15 +185,17 @@ private:
     odb::nullable<std::string> fastdfs_file_id_;
 
     // 文件所属用户 ID, 普通索引用于快速查找用户的文件信息
+    // 用户 ID 为 36 字符的 UUIDv4(带连字符), 列宽取 64, 与 tbl_user.user_id 保持一致
 #ifdef ODB_COMPILER
-#pragma db column("user_id") type("VARCHAR(32)") not_null
+#pragma db column("user_id") type("VARCHAR(64)") not_null
 #pragma db index
 #endif
     std::string user_id_;
 
     // 文件所属会话 ID, 可为空(文件可以不属于任何聊天会话)
+    // 会话 ID 为 36 字符的 UUIDv4(带连字符), 列宽取 64, 与 tbl_session.session_id 保持一致
 #ifdef ODB_COMPILER
-#pragma db column("session_id") type("VARCHAR(32)")
+#pragma db column("session_id") type("VARCHAR(64)")
 #endif
     odb::nullable<std::string> session_id_;
 };

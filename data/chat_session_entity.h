@@ -196,8 +196,9 @@ private:
     std::string model_name_;
 
     // 会话关联的文件 ID, Excel 类型会话关联上传的 Excel 文件, 可为空(尚未关联文件)
+    // 文件 ID 为 36 字符的 UUIDv4(带连字符), 列宽取 64, 与 tbl_file_info.file_id 保持一致
 #ifdef ODB_COMPILER
-#pragma db column("file_id") type("VARCHAR(32)")
+#pragma db column("file_id") type("VARCHAR(64)")
 #endif
     odb::nullable<std::string> file_id_;
 

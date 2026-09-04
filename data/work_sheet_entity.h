@@ -67,8 +67,9 @@ private:
     unsigned long long id_;
 
     // WorkSheet 所属文件 ID, 一个文件可对应多个 WorkSheet, 建普通索引加速按文件查询
+    // 文件 ID 为 36 字符的 UUIDv4(带连字符), 列宽取 64, 与 tbl_file_info.file_id 保持一致
 #ifdef ODB_COMPILER
-#pragma db column("file_id") type("VARCHAR(32)") not_null
+#pragma db column("file_id") type("VARCHAR(64)") not_null
 #pragma db index
 #endif
     std::string file_id_;
