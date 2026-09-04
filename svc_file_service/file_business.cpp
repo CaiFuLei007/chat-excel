@@ -527,13 +527,11 @@ std::string FileBusiness::UploadFileInfo(const std::string& request_id, const st
                                          const std::string& session_id, const std::string& file_name,
                                          const std::string& file_extension, unsigned long long file_size)
 {
-    // 构建文件信息, 文件 ID 使用 uuid 生成器生成(去掉连字符, 36 字符 -> 32 字符,
-    // 与文件信息表 file_id 字段 VARCHAR(32) 的长度限制匹配), 上传时间为当前时间戳,
+    // 构建文件信息, 文件 ID 使用 uuid 生成器生成(保留连字符, 36 字符,
+    // 与文件信息表 file_id 字段 VARCHAR(64) 的长度限制匹配), 上传时间为当前时间戳,
     // fastdfs_file_id 为空字符串(文件数据尚未上传)
     FileInfo file_info;
     file_info.file_id = cpp_toolkit::UuidUtil::GenerateUuidV4();
-    file_info.file_id.erase(std::remove(file_info.file_id.begin(), file_info.file_id.end(), '-'),
-                            file_info.file_id.end());
     file_info.file_name = file_name;
     file_info.file_extension = file_extension;
     file_info.file_size = file_size;
