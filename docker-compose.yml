@@ -169,6 +169,9 @@ services:
       SERVICE_ADDR: ai:8006
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请通过 .env 或环境变量配置 MYSQL_PASSWORD}
       CHAT_SDK_MODELS: ${CHAT_SDK_MODELS:?请通过 .env 或环境变量配置 AI 模型 JSON}
+      CHAT_SDK_DB_PATH: ${CHAT_SDK_DB_PATH:?请通过 .env 或环境变量配置 ChatSDK 会话消息库路径}
+    volumes:
+      - chatexcel-ai-sdkdata:/home/chat_excel/data
     ports:
       - 8006:8006
     restart: always
@@ -179,3 +182,6 @@ services:
       start_period: 10s
     networks:
       - chatexcel-net
+
+volumes:
+  chatexcel-ai-sdkdata:
