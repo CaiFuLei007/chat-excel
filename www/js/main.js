@@ -681,6 +681,8 @@ function createChatEngine(opts) {
           onFinalResult: (obj) => {
             gotContent = true;
             removeThinking();
+            // 按后端最终 JSON 携带的 taskStatus 逐项更新任务打勾(completed → √, 其他 → ✗)
+            if (obj && obj.taskStatus) renderer.setTaskStatus(obj.taskStatus);
             // 回调返回 false 表示“数据操作类”结果：无需跳结果分析, 气泡内直接展示 AI 总结
             const isAnalysis = !opts.onFinalResult || opts.onFinalResult(obj) !== false;
             const note = document.createElement('div');

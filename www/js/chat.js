@@ -43,6 +43,31 @@ class StreamTagParser {
       this.buffer = '';
     }
     this.buffer = '';
+    // 任务段残余的最后一项(其后再无数字分隔符)需在流结束时冲刷输出
+    if (this.state === 'tasks') this._flushLastTask();
+  }
+
+  /** 任务段结束时冲刷段尾残余: 最后一个任务之后没有下一个任务编号, 无法在 _emitTasks 中被切分输出 */
+  _flushLastTask() {
+    if (!this.lastTaskRaw) return;
+    // 找到最后一个任务编号的起始位置
+    const re = /(?:^|\s)(\d+)[.、．]\s*/g;
+    let m;
+    let lastSegStart = -1;
+    let lastNum = null;
+    while ((m = re.exec(this.lastTaskRaw)) !== null) {
+      lastSegStart = re.lastIndex;
+      lastNum = m[1];
+    }
+    if (lastSegStart === -1) return; // 段内没有任务
+    const text = this.lastTaskRaw.slice(lastSegStart).trim();
+    this.lastTaskRaw = '';
+    if (!text) return;
+    const key = `${lastNum}:${text}`;
+    if (this._taskDone.includes(key)) return;
+    this._taskDone.push(key);
+    this.taskCount += 1;
+    this.render.onTask && this.render.onTask(text, this.taskCount);
   }
 
   /** 当前状态对应的结束标签（如 <TITLE_END>） */
@@ -98,6 +123,8 @@ class StreamTagParser {
       }
       this._emit(this.buffer.slice(0, endIdx));
       this.buffer = this.buffer.slice(endIdx + endTag.length);
+      // 任务段(TASKS_END)结束时冲刷段尾残余, 保证最后一个任务被输出
+      if (this.state === 'tasks') this._flushLastTask();
       this.state = 'scan';
       this.otherTag = '';
     }
@@ -313,10 +340,12 @@ function createAiStreamRenderer(bubble, structured) {
           titleBuf += t;
           body.textContent = titleBuf;
         },
-        onTask(text) {
+        onTask(text, index) {
           const list = ensureTasks();
           const item = document.createElement('div');
           item.className = 'ai-task';
+          // 记录任务序号, 供总结阶段的 taskStatus 按 taskId 匹配逐项打勾
+          item.dataset.taskId = index;
           item.innerHTML = '<span class="ai-task-box"></span><span class="ai-task-text"></span>';
           item.querySelector('.ai-task-text').textContent = tidySingle(text);
           list.appendChild(item);
@@ -364,8 +393,7 @@ function createAiStreamRenderer(bubble, structured) {
     finish() {
       if (structured) {
         parser.flush();
-        // 本回合回复完成：所有任务标记为已完成（方框变 √）
-        if (tasksCard) tasksCard.classList.add('done');
+        // 任务打勾不在此处统一处理: 由 setTaskStatus 按模型总结 JSON 的 taskStatus 逐项判定
         // 最终整理：去除空行 / 多余换行 / 行首尾空白，标签残渣清理
         if (titleBody) titleBody.textContent = tidySingle(titleBody.textContent);
         if (analysisBody) analysisBody.textContent = tidyBody(analysisBody.textContent);
@@ -376,6 +404,22 @@ function createAiStreamRenderer(bubble, structured) {
       if (!structured && plainEl) {
         plainEl.innerHTML = mdRender(plainBuf);
       }
+    },
+    /** 按模型总结 JSON 的 taskStatus 逐项更新任务状态: completed → √, 其他 → ✗ */
+    setTaskStatus(taskStatus) {
+      if (!tasksCard || !Array.isArray(taskStatus) || taskStatus.length === 0) return;
+      const items = Array.from(tasksCard.querySelectorAll('.ai-task'));
+      taskStatus.forEach((task, index) => {
+        const status = task && task.status;
+        // 优先按 taskId 匹配, 匹配不到时按顺序对应(与模型输出顺序一致)
+        const target = items.find((el) => el.dataset.taskId == task.taskId) || items[index];
+        if (!target) return;
+        const box = target.querySelector('.ai-task-box');
+        if (!box) return;
+        const completed = status === 'completed';
+        box.classList.toggle('completed', completed);
+        box.classList.toggle('failed', !completed);
+      });
     },
     /** 是否渲染过任何内容 */
     hasContent() {

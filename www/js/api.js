@@ -250,6 +250,28 @@ async function apiSendStreamMessage(body, handlers) {
   let accText = '';
   let accFrames = 0;
   let accFinal = null;
+  // 最终结果 JSON 跨帧累积缓冲: 超大结果集(几十上百行)会被底层流式传输按块分片为
+  // 多条 SSE 帧, 每片都是不完整的 JSON, 需拼接后才能解析; null 表示未处于累积中
+  let jsonBuf = null;
+
+  /** 尝试将(可能跨帧拼接的)文本解析为最终结果对象(含 summary + displayType) */
+  const parseFinalResult = (text) => {
+    if (!text || text.trim().charAt(0) !== '{') return null;
+    try {
+      const obj = JSON.parse(text);
+      if (obj && typeof obj === 'object' && 'summary' in obj && 'displayType' in obj) return obj;
+    } catch (e) { /* JSON 未完整, 等待后续分片 */ }
+    return null;
+  };
+
+  /** 冲刷未完成的 JSON 累积缓冲(异常结束/流终止时回退为普通文本) */
+  const flushJsonBuf = () => {
+    if (jsonBuf !== null) {
+      handlers.onText(jsonBuf);
+      accText += jsonBuf;
+      jsonBuf = null;
+    }
+  };
 
   const processLine = (line) => {
     line = line.trim();
@@ -257,6 +279,7 @@ async function apiSendStreamMessage(body, handlers) {
     const raw = line.slice(5).trim();
     if (!raw) return;
     if (raw === '[DONE]') {
+      flushJsonBuf(); // 流结束前若有未解析完成的 JSON 分片, 回退为普通文本
       console.log('[sse-raw]', '[DONE]'); // 流结束标记
       return;
     }
@@ -270,6 +293,7 @@ async function apiSendStreamMessage(body, handlers) {
     console.log('[sse-frame]', frame); // 网关返回的帧（含 errorCode/errorMsg/done/content 等）
     if (frame.errorCode && frame.errorCode !== 0) {
       console.log('[sse-frame] 业务错误 errorCode =', frame.errorCode, frame.errorMsg);
+      flushJsonBuf();
       handlers.onError(frame.errorMsg || I18N.t('common.serviceUnavailable'));
       return;
     }
@@ -280,17 +304,21 @@ async function apiSendStreamMessage(body, handlers) {
       return;
     }
     console.log('[sse-content]', content.length > 600 ? content.slice(0, 600) + '…(截断)' : content);
-    // 尝试判定最终结果帧：JSON 且含 summary + displayType
+    // 最终结果帧判定: 帧内容以 '{' 开头视为 JSON(可能被分片), 进入跨帧累积;
+    // 累积到完整可解析出 summary/displayType 时判定为最终结果帧;
+    // 若携带 done 仍解析不完整(异常输出), 回退为普通文本展示
     const trimmed = content.trim();
-    if (trimmed.startsWith('{')) {
-      try {
-        const obj = JSON.parse(trimmed);
-        if (obj && typeof obj === 'object' && 'summary' in obj && 'displayType' in obj) {
-          accFinal = obj; // 记录最终结果帧（summary/displayType/data）
-          handlers.onFinalResult(obj);
-          return;
-        }
-      } catch (e) { /* 非 JSON，按普通文本处理 */ }
+    if (trimmed.startsWith('{') || jsonBuf !== null) {
+      jsonBuf = (jsonBuf === null) ? trimmed : jsonBuf + content;
+      const finalObj = parseFinalResult(jsonBuf);
+      if (finalObj) {
+        jsonBuf = null;
+        accFinal = finalObj; // 记录最终结果帧（summary/displayType/data）
+        handlers.onFinalResult(finalObj);
+        return;
+      }
+      if (frame.done) flushJsonBuf();
+      return;
     }
     accText += content; // 累计普通文本片段
     accFrames += 1;

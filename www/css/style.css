@@ -506,6 +506,11 @@ select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csv
 }
 .ai-tasks-card.done .ai-task-box { background: var(--primary); border-color: var(--primary); }
 .ai-tasks-card.done .ai-task-box::after { opacity: 1; transform: scale(1); }
+/* 任务状态逐项判定(按模型总结 JSON 的 taskStatus): completed → 填充 √, failed → 红色 ✗ */
+.ai-task-box.completed { background: var(--primary); border-color: var(--primary); }
+.ai-task-box.completed::after { opacity: 1; transform: scale(1); }
+.ai-task-box.failed { border-color: #e05d5d; }
+.ai-task-box.failed::after { content: '\2717'; opacity: 1; transform: scale(1); color: #e05d5d; }
 .ai-task-text { line-height: 1.5; }
 .ai-analysis-body { font-size: 13.5px; color: var(--text-main); line-height: 1.8; white-space: pre-wrap; word-break: break-word; }
 
