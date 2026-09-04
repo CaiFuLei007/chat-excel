@@ -166,20 +166,24 @@ private:
 
     /**
      * @brief 构建最终响应 JSON, 将总结内容, 可视化显示类型, SQL 执行结果与任务状态组装为
-     *        {"summary", "displayType", "taskStatus", "data": {"columns", "column_types", "rows", "tables"}} 结构返回前端
+     *        {"summary", "displayType", "taskStatus", "analysisProcess",
+     *         "data": {"columns", "column_types", "rows", "tables"}} 结构返回前端
      * @param summary 总结阶段生成的总结内容
      * @param chart_type 总结阶段推荐的图表类型
      * @param columns SQL 执行结果的列名列表
      * @param column_types SQL 执行结果的列类型列表, 与列名列表一一对应
      * @param rows SQL 执行结果的行数据列表
      * @param task_status 模型总结 JSON 中的任务状态数组, 前端据此逐项打勾, 无任务状态时为空数组
+     * @param analysis_process 本轮透传给前端展示的分析过程文本(含 TITLE/TASKS/ANALYSIS 标签),
+     *        随最终 JSON 一起持久化供历史会话完整还原, 为空时不写入最终 JSON
      * @return 最终响应 JSON 字符串
      */
     std::string BuildFinalResponseJson(const std::string& summary, const std::string& chart_type,
                                        const std::vector<std::string>& columns,
                                        const std::vector<std::string>& column_types,
                                        const std::vector<std::vector<std::string>>& rows,
-                                       const Json::Value& task_status);
+                                       const Json::Value& task_status,
+                                       const std::string& analysis_process);
 
     /**
      * @brief 更新会话元数据, 消息总数加一, 会话第一条消息时更新标题并刷新最近一次消息时间,

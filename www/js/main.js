@@ -615,8 +615,23 @@ function createChatEngine(opts) {
             } catch (e) { /* 非结果帧 */ }
           }
           if (parsed) {
-            bodyEl.innerHTML = `<div class="ai-result-note"></div>`;
-            bodyEl.querySelector('.ai-result-note').textContent = tidyBody(parsed.summary || '');
+            // 最终 JSON 内嵌本轮分析过程文本时, 先按结构化标签渲染完整分析过程(与实时聊天一致)
+            const processText = (parsed.analysisProcess || '').trim();
+            let historyRenderer = null;
+            if (opts.structured && processText) {
+              historyRenderer = renderAssistantHistory(bodyEl, processText, true);
+            }
+            // 任务状态逐项打勾/打叉(与实时聊天一致): completed → √, 其他 → ✗
+            if (historyRenderer && parsed.taskStatus) {
+              historyRenderer.setTaskStatus(parsed.taskStatus);
+            }
+            // 末尾提示与实时行为一致 : 数据操作类展示总结文本, 查询/分析类展示"结果分析 ✓"
+            const note = document.createElement('div');
+            note.className = 'ai-result-note';
+            note.textContent = isDataModifyResult(parsed)
+              ? tidyBody(parsed.summary || '')
+              : I18N.t('console.resultAnalysis') + ' ✓';
+            bodyEl.appendChild(note);
           } else {
             renderAssistantHistory(bodyEl, m.content || '', opts.structured);
           }

@@ -692,11 +692,18 @@ void AIMessageHandler::HandleAnalysisChat(const SendMessageContext& context,
             task_status = summary_json["taskStatus"];
         }
 
+        // 提取本轮透传给前端展示的分析过程文本(与实时流式展示内容一致, 已滤除 SQL/邮件内部区间),
+        // 随最终 JSON 一起持久化, 保证查看历史会话时聊天框能完整还原实时展示的分析过程
+        TagStreamFilter display_filter;
+        std::string analysis_display_text = display_filter.Feed(analysis_response);
+        analysis_display_text += display_filter.Finish();
+
         // 组装最终响应 JSON, 并将最终 JSON 作为一条 assistant 消息追加到 ChatSDK,
         // 保证通过聊天会话 ID 获取历史消息时前端也能正常展示可视化图表
         // (模型总结阶段存储的 assistant 消息不含 SQL 执行结果, 无法支撑图表展示)
         const std::string final_response =
-            BuildFinalResponseJson(summary, chart_type, columns, column_types, rows, task_status);
+            BuildFinalResponseJson(summary, chart_type, columns, column_types, rows, task_status,
+                                   analysis_display_text);
         if (!ai_chat_sdk_->CreateMessage(context.chat_session_id, "assistant", final_response))
         {
             ERR("最终 JSON 写入 ChatSDK 失败, request_id: {}, chat_session_id: {}",
@@ -972,7 +979,8 @@ std::string AIMessageHandler::BuildFinalResponseJson(const std::string& summary,
                                                      const std::vector<std::string>& columns,
                                                      const std::vector<std::string>& column_types,
                                                      const std::vector<std::vector<std::string>>& rows,
-                                                     const Json::Value& task_status)
+                                                     const Json::Value& task_status,
+                                                     const std::string& analysis_process)
 {
     Json::Value data;
     for (const std::string& column : columns)
@@ -1002,6 +1010,12 @@ std::string AIMessageHandler::BuildFinalResponseJson(const std::string& summary,
     Json::Value response;
     response["summary"] = summary;
     response["displayType"] = chart_type;
+    // 本轮分析过程文本(含 TITLE/TASKS/ANALYSIS 标签)随最终 JSON 一起持久化,
+    // 保证查看历史会话时聊天框能完整还原实时展示的分析过程; 为空时不写入
+    if (!analysis_process.empty())
+    {
+        response["analysisProcess"] = analysis_process;
+    }
     // 任务状态数组(仅模型输出过 taskStatus 时携带), 前端据此逐项打勾
     if (task_status.isArray() && !task_status.empty())
     {
@@ -1212,8 +1226,27 @@ std::string AIMessageHandler::BuildEmailParamJson(const std::string& request_id,
     for (int j = static_cast<int>(final_json_index) - 1; j >= 0; --j)
     {
         const aichat_sdk::Message& message = messages[j];
-        if (message.role == "assistant"
-            && message.content.find(kAnalysisStartTag) != std::string::npos)
+        if (message.role != "assistant")
+        {
+            continue;
+        }
+        // 跳过最终 JSON 消息 : 最终 JSON 内可能内嵌 analysisProcess 分析过程标签文本,
+        // 避免将历史轮次的最终 JSON 消息误识别为分析消息
+        try
+        {
+            const Json::Value candidate_json =
+                ParseModelJson(message.content, ErrorCode::AI_SUMMARY_CONTENT_PARSE_ERROR);
+            if (candidate_json.isMember("summary") && candidate_json["summary"].isString()
+                && candidate_json.isMember("displayType") && candidate_json["displayType"].isString())
+            {
+                continue;
+            }
+        }
+        catch (const ChatExcelException&)
+        {
+            // JSON 解析失败说明该消息不是最终 JSON 消息, 继续按分析消息判断
+        }
+        if (message.content.find(kAnalysisStartTag) != std::string::npos)
         {
             const std::string title = ExtractTaggedContent(message.content, kTitleStartTag, kTitleEndTag);
             const std::string analysis =
