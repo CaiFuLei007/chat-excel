@@ -234,6 +234,7 @@ private:
     bool in_tag_ = false;
 };
 
+
 /**
  * @brief 去除字符串首尾的空白字符
  * @param text 原始字符串
@@ -652,9 +653,14 @@ void AIMessageHandler::HandleAnalysisChat(const SendMessageContext& context,
         std::vector<std::vector<std::string>> rows;
         const std::string result_json = ExecuteSql(context, sql, columns, column_types, rows);
 
-        // 构建总结提示词并发送给模型, 生成总结内容
+        // 构建总结提示词并通过 SendMessageStream 流式接收模型响应, 模型输出为严格 JSON;
+        // 总结阶段生成的 summary 文本不再流式透传到聊天正文(避免与最终结果面板的总结重复展示,
+        // 前端对话仅保留分析阶段的标签式内容), 完整响应到达后统一解析,
+        // 由最终结果帧一次性携带 summary/taskStatus/data 返回前端驱动结果面板与任务打勾
         const std::string summary_prompt = BuildSummaryPrompt(context, result_json);
-        const std::string summary_response = ai_chat_sdk_->SendMessage(context.chat_session_id, summary_prompt);
+        const std::string summary_response =
+            ai_chat_sdk_->SendMessageStream(context.chat_session_id, summary_prompt,
+                                            [](const std::string&, bool) {});
         if (summary_response.empty())
         {
             ERR("模型总结阶段响应为空, request_id: {}, chat_session_id: {}",
@@ -678,10 +684,19 @@ void AIMessageHandler::HandleAnalysisChat(const SendMessageContext& context,
         const std::string chart_type = summary_json["chartType"].asString();
         INFO("总结阶段完成, request_id: {}, 图表类型: {}", context.request_id, chart_type);
 
+        // 提取模型总结 JSON 中的任务状态数组(可选字段), 前端据此逐项打勾;
+        // 模型未输出 taskStatus 或格式非法时使用空数组, 前端不打勾, 保持空心方框
+        Json::Value task_status;
+        if (summary_json.isMember("taskStatus") && summary_json["taskStatus"].isArray())
+        {
+            task_status = summary_json["taskStatus"];
+        }
+
         // 组装最终响应 JSON, 并将最终 JSON 作为一条 assistant 消息追加到 ChatSDK,
         // 保证通过聊天会话 ID 获取历史消息时前端也能正常展示可视化图表
         // (模型总结阶段存储的 assistant 消息不含 SQL 执行结果, 无法支撑图表展示)
-        const std::string final_response = BuildFinalResponseJson(summary, chart_type, columns, column_types, rows);
+        const std::string final_response =
+            BuildFinalResponseJson(summary, chart_type, columns, column_types, rows, task_status);
         if (!ai_chat_sdk_->CreateMessage(context.chat_session_id, "assistant", final_response))
         {
             ERR("最终 JSON 写入 ChatSDK 失败, request_id: {}, chat_session_id: {}",
@@ -956,7 +971,8 @@ std::string AIMessageHandler::BuildFinalResponseJson(const std::string& summary,
                                                      const std::string& chart_type,
                                                      const std::vector<std::string>& columns,
                                                      const std::vector<std::string>& column_types,
-                                                     const std::vector<std::vector<std::string>>& rows)
+                                                     const std::vector<std::vector<std::string>>& rows,
+                                                     const Json::Value& task_status)
 {
     Json::Value data;
     for (const std::string& column : columns)
@@ -986,6 +1002,11 @@ std::string AIMessageHandler::BuildFinalResponseJson(const std::string& summary,
     Json::Value response;
     response["summary"] = summary;
     response["displayType"] = chart_type;
+    // 任务状态数组(仅模型输出过 taskStatus 时携带), 前端据此逐项打勾
+    if (task_status.isArray() && !task_status.empty())
+    {
+        response["taskStatus"] = task_status;
+    }
     response["data"] = data;
 
     std::string response_json;

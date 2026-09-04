@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <jsoncpp/json/json.h>
 #include <aichat_sdk/aichat_sdk.h>
 #include <cpp-toolkit/rpc.h>
 #include "svc_ai_service/chat_session_manager.h"
@@ -17,7 +18,8 @@ namespace ai_service
  * @brief AI 消息处理类, 负责 AI 子服务中给模型发送消息的完整业务流程,
  *        支持普通聊天(plain), Excel 聊天(excel)与数据库聊天(database)三种场景;
  *        Excel/数据库场景通过跨子服务 RPC 收集数据库元数据, 构建分析/总结/邮件提示词,
- *        与模型进行两阶段交互(分析生成 SQL, 总结生成可视化数据), 并将模型响应实时流式返回;
+ *        与模型进行两阶段交互(分析生成 SQL, 总结生成可视化数据), 两阶段模型响应均流式返回:
+ *        分析阶段过滤标签区间后透传, 总结阶段流式提取 summary 字段内容透传;
  *        类内不保存请求级状态, 支持多请求并发调用
  */
 class AIMessageHandler
@@ -83,6 +85,7 @@ private:
     /**
      * @brief 处理 Excel 与数据库聊天场景的公共流程: 收集数据库元数据, 构建分析提示词,
      *        与模型进行两阶段交互并执行 SQL, 组织可视化 JSON 结果返回前端;
+     *        分析与总结阶段的模型响应均流式透传前端(总结阶段仅透传 summary 字段内容),
      *        对话完成后清理本轮中间消息, 仅保留用户原话与模型最终返回
      * @param context 发送消息上下文
      * @param stream_callback 流式输出回调
@@ -162,19 +165,21 @@ private:
                                    const std::vector<std::vector<std::string>>& rows);
 
     /**
-     * @brief 构建最终响应 JSON, 将总结内容, 可视化显示类型与 SQL 执行结果组装为
-     *        {"summary", "displayType", "data": {"columns", "column_types", "rows", "tables"}} 结构返回前端
+     * @brief 构建最终响应 JSON, 将总结内容, 可视化显示类型, SQL 执行结果与任务状态组装为
+     *        {"summary", "displayType", "taskStatus", "data": {"columns", "column_types", "rows", "tables"}} 结构返回前端
      * @param summary 总结阶段生成的总结内容
      * @param chart_type 总结阶段推荐的图表类型
      * @param columns SQL 执行结果的列名列表
      * @param column_types SQL 执行结果的列类型列表, 与列名列表一一对应
      * @param rows SQL 执行结果的行数据列表
+     * @param task_status 模型总结 JSON 中的任务状态数组, 前端据此逐项打勾, 无任务状态时为空数组
      * @return 最终响应 JSON 字符串
      */
     std::string BuildFinalResponseJson(const std::string& summary, const std::string& chart_type,
                                        const std::vector<std::string>& columns,
                                        const std::vector<std::string>& column_types,
-                                       const std::vector<std::vector<std::string>>& rows);
+                                       const std::vector<std::vector<std::string>>& rows,
+                                       const Json::Value& task_status);
 
     /**
      * @brief 更新会话元数据, 消息总数加一, 会话第一条消息时更新标题并刷新最近一次消息时间,
