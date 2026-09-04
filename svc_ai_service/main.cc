@@ -48,7 +48,7 @@ DEFINE_string(mysql_password, "", "MySQL 数据库密码");
 DEFINE_string(mysql_database, "chat_excel", "MySQL 数据库名");
 
 // MySQL 数据库字符集
-DEFINE_string(mysql_charset, "utf8", "MySQL 数据库字符集");
+DEFINE_string(mysql_charset, "utf8mb4", "MySQL 数据库字符集");
 
 // MySQL 连接池大小
 DEFINE_int32(mysql_connection_pool_size, 3, "MySQL 连接池大小");
